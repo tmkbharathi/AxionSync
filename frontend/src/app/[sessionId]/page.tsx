@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import { QRCodeSVG } from "qrcode.react";
 import { 
-  Copy, CheckCircle, UploadCloud, X, Download, Trash2, Link, 
+  Copy, CheckCircle, UploadCloud, Cloud, X, Download, Trash2, Link, 
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";

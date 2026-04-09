@@ -16,10 +16,11 @@ const server = http.createServer(app);
 // Environment variables
 const PORT = process.env.PORT || 3001;
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || "";
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || "";
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || "";
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || "clipbridge";
+const S3_ENDPOINT = process.env.S3_ENDPOINT || "";
+const S3_REGION = process.env.S3_REGION || "auto";
+const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "";
+const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "";
+const S3_BUCKET_NAME = process.env.S3_BUCKET_NAME || "clipbridge";
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 const redis = new Redis(REDIS_URL, {
@@ -38,14 +39,14 @@ const io = new Server(server, {
   cors: { origin: FRONTEND_URL, methods: ["GET", "POST"] },
 });
 
-// S3 Client for Cloudflare R2
 const s3 = new S3Client({
-  region: "auto",
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  region: S3_REGION,
+  endpoint: S3_ENDPOINT,
   credentials: {
-    accessKeyId: R2_ACCESS_KEY_ID,
-    secretAccessKey: R2_SECRET_ACCESS_KEY,
+    accessKeyId: S3_ACCESS_KEY_ID,
+    secretAccessKey: S3_SECRET_ACCESS_KEY,
   },
+  forcePathStyle: true, // Required for many S3-compatible providers like Supabase
 });
 
 const upload = multer({
@@ -88,7 +89,7 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
 
     // Upload to R2
     const uploadCommand = new PutObjectCommand({
-      Bucket: R2_BUCKET_NAME,
+      Bucket: S3_BUCKET_NAME,
       Key: s3Key,
       Body: file.buffer,
       ContentType: file.mimetype,
@@ -130,7 +131,7 @@ app.get("/download", async (req, res) => {
     if (!s3Key) return res.status(400).json({ error: "Missing s3Key" });
     
     const command = new GetObjectCommand({
-      Bucket: R2_BUCKET_NAME,
+      Bucket: S3_BUCKET_NAME,
       Key: s3Key,
     });
     const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
@@ -191,9 +192,9 @@ io.on("connection", (socket) => {
 
   socket.on("delete_file", async ({ sessionId, file }) => {
     try {
-        // Delete from R2
+        // Delete from S3/R2
         await s3.send(new DeleteObjectCommand({
-            Bucket: R2_BUCKET_NAME,
+            Bucket: S3_BUCKET_NAME,
             Key: file.s3Key
         }));
 
@@ -227,7 +228,7 @@ cron.schedule("0 * * * *", async () => {
 
         while (isTruncated) {
             const listCommand = new ListObjectsV2Command({
-                Bucket: R2_BUCKET_NAME,
+                Bucket: S3_BUCKET_NAME,
                 ContinuationToken: continuationToken,
             });
             const response = await s3.send(listCommand);
@@ -239,10 +240,10 @@ cron.schedule("0 * * * *", async () => {
 
             for (const keyObj of keysToDelete) {
                 await s3.send(new DeleteObjectCommand({
-                    Bucket: R2_BUCKET_NAME,
+                    Bucket: S3_BUCKET_NAME,
                     Key: keyObj.Key
                 }));
-                console.log(`Auto-cleaned stale R2 object: ${keyObj.Key}`);
+                console.log(`Auto-cleaned stale object: ${keyObj.Key}`);
             }
 
             isTruncated = response.IsTruncated || false;

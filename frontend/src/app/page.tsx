@@ -10,8 +10,8 @@ import { Points, PointMaterial } from "@react-three/drei";
 
 // Animated Particle Background using Three.js
 function StarBackground(props: any) {
-  const groupRef = useRef<any>();
-  const pointsRef = useRef<any>();
+  const groupRef = useRef<any>(null);
+  const pointsRef = useRef<any>(null);
   const pointer = useRef({ x: 0, y: 0 });
 
   useEffect(() => {

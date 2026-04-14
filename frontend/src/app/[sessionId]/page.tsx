@@ -273,16 +273,16 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative selection:bg-sky-500/30">
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative selection:bg-blue-500/30">
       
       {/* Background Decor */}
-      <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[120px] pointer-events-none -translate-x-1/2 -translate-y-1/2" />
-      <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none translate-x-1/3 translate-y-1/3" />
+      <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px] pointer-events-none -translate-x-1/2 -translate-y-1/2" />
+      <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none translate-x-1/3 translate-y-1/3" />
 
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-slate-800/60 bg-slate-900/40 backdrop-blur-md z-10">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center shadow-lg shadow-sky-500/20">
+          <div className="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
             <Smartphone className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -290,7 +290,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
               <h1 className="font-bold text-lg hidden sm:block">Devices</h1>
               <button 
                 onClick={() => setShowRoomSize(!showRoomSize)}
-                className="p-1 hover:bg-slate-800 rounded-full transition-colors text-slate-500 hover:text-sky-400"
+                className="p-1 hover:bg-slate-800 rounded-full transition-colors text-slate-500 hover:text-blue-400"
                 title={showRoomSize ? "Hide Device Count" : "Show Device Count"}
               >
                 {showRoomSize ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -320,7 +320,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           
           <button 
             onClick={handleCopyLink}
-            className="p-2 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 rounded-md transition-colors flex items-center gap-2"
+            className="p-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-md transition-colors flex items-center gap-2"
           >
             {copiedLink ? <CheckCircle className="w-4 h-4" /> : <Link className="w-4 h-4" />}
             <span className="hidden sm:inline text-xs font-medium">{copiedLink ? 'Copied' : 'Share'}</span>
@@ -332,13 +332,13 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       <div className="md:hidden flex p-2 bg-slate-900/40 border-b border-slate-800/60 z-10">
         <button 
           onClick={() => setActiveTab('text')}
-          className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'text' ? 'bg-slate-800 text-sky-400 shadow-sm' : 'text-slate-400'}`}
+          className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'text' ? 'bg-slate-800 text-blue-400 shadow-sm' : 'text-slate-400'}`}
         >
           Text
         </button>
         <button 
           onClick={() => setActiveTab('files')}
-          className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'files' ? 'bg-slate-800 text-sky-400 shadow-sm' : 'text-slate-400'}`}
+          className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'files' ? 'bg-slate-800 text-blue-400 shadow-sm' : 'text-slate-400'}`}
         >
           Files
         </button>
@@ -370,7 +370,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             </button>
           </div>
           
-          <div className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-sky-500/50 focus-within:ring-1 focus-within:ring-sky-500/50 transition-all shadow-inner">
+          <div className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all shadow-inner">
             <textarea
               value={text}
               onChange={handleTextChange}
@@ -410,13 +410,13 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
               <button 
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className={`w-full py-4 border-2 border-dashed ${isDragOver ? "border-sky-500 bg-sky-500/10 text-sky-400" : "border-slate-700/80 text-slate-400"} rounded-xl flex flex-col items-center justify-center gap-2 hover:bg-slate-800/30 hover:border-sky-500/50 hover:text-sky-400 transition-all overflow-hidden relative group`}
+                className={`w-full py-4 border-2 border-dashed ${isDragOver ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-700/80 text-slate-400"} rounded-xl flex flex-col items-center justify-center gap-2 hover:bg-slate-800/30 hover:border-blue-500/50 hover:text-blue-400 transition-all overflow-hidden relative group`}
               >
                 {uploading ? (
                    <div className="absolute inset-0 bg-slate-800/80 flex flex-col items-center justify-center backdrop-blur-sm z-10">
-                     <Loader2 className="w-6 h-6 animate-spin text-sky-400 mb-2" />
+                     <Loader2 className="w-6 h-6 animate-spin text-blue-400 mb-2" />
                      <div className="w-2/3 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                       <div className="h-full bg-sky-500 rounded-full" style={{ width: `${uploadProgress}%` }} />
+                       <div className="h-full bg-blue-500 rounded-full" style={{ width: `${uploadProgress}%` }} />
                      </div>
                      <span className="text-xs mt-2 font-medium text-slate-300">{uploadProgress}%</span>
                    </div>
@@ -460,7 +460,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                       <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
                           onClick={() => handleDownloadFile(f)}
-                          className="p-2 text-slate-400 hover:text-sky-400 hover:bg-sky-400/10 rounded-md transition-colors"
+                          className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
                           title="Download"
                         >
                           <Download className="w-4 h-4" />

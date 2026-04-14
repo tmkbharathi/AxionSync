@@ -47,15 +47,26 @@ function StarBackground(props: any) {
       groupRef.current.rotation.y -= delta / 20;
     }
     
-    // 2. Interactive mouse sway
+    // 2. Interactive parallax and sway
     if (pointsRef.current) {
-      // Use the global pointer tracking we established
-      const targetX = pointer.current.y * 0.5;
-      const targetY = pointer.current.x * 0.5;
+      // Target rotation (sway)
+      const targetRotX = pointer.current.y * 0.4;
+      const targetRotY = pointer.current.x * 0.4;
       
-      // Smooth interpolation
-      pointsRef.current.rotation.x += (targetX - pointsRef.current.rotation.x) * 0.05;
-      pointsRef.current.rotation.y += (targetY - pointsRef.current.rotation.y) * 0.05;
+      // Target position (parallax shift)
+      const targetPosX = pointer.current.x * 0.1;
+      const targetPosY = pointer.current.y * 0.1;
+      
+      // Smooth interpolation for rotation
+      pointsRef.current.rotation.x += (targetRotX - pointsRef.current.rotation.x) * 0.05;
+      pointsRef.current.rotation.y += (targetRotY - pointsRef.current.rotation.y) * 0.05;
+      
+      // Smooth interpolation for position (adds depth)
+      pointsRef.current.position.x += (targetPosX - pointsRef.current.position.x) * 0.03;
+      pointsRef.current.position.y += (targetPosY - pointsRef.current.position.y) * 0.03;
+      
+      // Subtle float oscillation
+      pointsRef.current.position.z = Math.sin(state.clock.elapsedTime * 0.5) * 0.02;
     }
   });
 
@@ -64,7 +75,7 @@ function StarBackground(props: any) {
       <Points ref={pointsRef} positions={sphere} stride={3} frustumCulled {...props}>
         <PointMaterial
           transparent
-          color="#38bdf8"
+          color="#22d3ee"
           size={0.002}
           sizeAttenuation={true}
           depthWrite={false}
@@ -109,11 +120,12 @@ export default function Home() {
             transition={{ duration: 0.8, ease: "easeOut" }}
             className="text-center w-full max-w-md"
         >
-          <div className="inline-flex items-center px-4 py-1 rounded-full bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-[11px] font-bold uppercase tracking-widest text-sky-400">
-            Real-Time Sync • <span className="text-sky-300/80">Beta v0.0.2</span>
+          <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-[11px] font-bold uppercase tracking-widest text-cyan-400">
+            <Zap className="w-3 h-3 fill-cyan-400" />
+            Real-Time Sync • <span className="text-cyan-300/80">Beta v0.0.2</span>
           </div>
           
-          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 pb-2 bg-clip-text text-transparent bg-gradient-to-r from-sky-400 via-indigo-400 to-purple-400">
+          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 pb-2 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500">
             Aether
           </h1>
           <p className="mt-4 text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed">
@@ -126,7 +138,7 @@ export default function Home() {
               whileTap={{ scale: 0.98 }}
               onClick={handleStart}
               disabled={isGenerating}
-              className="w-full px-8 py-4 bg-sky-500 hover:bg-sky-400 text-white rounded-xl font-bold text-lg shadow-[0_0_40px_-10px_rgba(14,165,233,0.5)] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-lg shadow-[0_0_40px_-10px_rgba(37,99,235,0.5)] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isGenerating ? "Creating session..." : "Create New Session"}
               <ArrowRight className="w-5 h-5" />
@@ -144,14 +156,14 @@ export default function Home() {
                 placeholder="Enter Session Key"
                 value={joinKey}
                 onChange={(e) => setJoinKey(e.target.value)}
-                className="w-full px-6 py-4 bg-slate-900/40 border border-slate-800 rounded-xl outline-none focus:border-sky-500/50 focus:bg-slate-900/60 transition-all text-center font-mono tracking-widest uppercase placeholder:text-slate-600 placeholder:font-sans placeholder:tracking-normal placeholder:lowercase"
+                className="w-full px-6 py-4 bg-slate-900/40 border border-slate-800 rounded-xl outline-none focus:border-blue-500/50 focus:bg-slate-900/60 transition-all text-center font-mono tracking-widest uppercase placeholder:text-slate-600 placeholder:font-sans placeholder:tracking-normal placeholder:lowercase"
               />
               {joinKey.trim().length > 0 && (
                 <motion.button
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   type="submit"
-                  className="absolute right-2 top-2 bottom-2 px-4 bg-sky-500 hover:bg-sky-400 text-white rounded-lg font-bold text-sm transition-colors shadow-lg"
+                  className="absolute right-2 top-2 bottom-2 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-sm transition-colors shadow-lg"
                 >
                   JOIN
                 </motion.button>
@@ -167,17 +179,17 @@ export default function Home() {
           className="mt-24 grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-4xl"
         >
           <FeatureCard 
-            icon={<Copy className="w-6 h-6 text-sky-400" />}
+            icon={<Copy className="w-6 h-6 text-cyan-400" />}
             title="Real-time Clipboard"
             desc="Copy text on your phone, paste it on your laptop instantly."
           />
           <FeatureCard 
-            icon={<Cloud className="w-6 h-6 text-indigo-400" />}
+            icon={<Cloud className="w-6 h-6 text-blue-400" />}
             title="Cloud File Storage"
             desc="Upload files up to 50MB and access them from any device."
           />
           <FeatureCard 
-            icon={<Shield className="w-6 h-6 text-purple-400" />}
+            icon={<Shield className="w-6 h-6 text-indigo-400" />}
             title="Auto Cleanup"
             desc="Files and text auto-destruct after 12 hours of inactivity."
           />

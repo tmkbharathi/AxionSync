@@ -108,12 +108,12 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
 
     // Save metadata to Redis and reset expiry
     await redis.lpush(filesKey, JSON.stringify(fileMeta));
-    await redis.expire(filesKey, 3600);
+    await redis.expire(filesKey, 43200);
     
     // Reset text expiry so session stays alive
     const textKey = `session:${sessionId}:text`;
     const textTtl = await redis.ttl(textKey);
-    if(textTtl !== -2) await redis.expire(textKey, 3600);
+    if(textTtl !== -2) await redis.expire(textKey, 43200);
 
     // Notify clients in session
     io.to(sessionId).emit("file_uploaded", fileMeta);
@@ -134,7 +134,7 @@ app.get("/download", async (req, res) => {
       Bucket: S3_BUCKET_NAME,
       Key: s3Key,
     });
-    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 43200 });
     res.json({ url: signedUrl });
   } catch (error) {
     console.error("Download error:", error);
@@ -150,10 +150,9 @@ app.get("/session/:sessionId", async (req, res) => {
         const filesKey = `session:${sessionId}:files`;
         
         const text = await redis.get(textKey) || "";
-        const historyRaw = await redis.lrange(historyKey, 0, 4);
         const filesRaw = await redis.lrange(filesKey, 0, -1);
         const files = filesRaw.map(f => JSON.parse(f));
-        res.json({ text, history: historyRaw, files });
+        res.json({ text, files });
     } catch (e) {
         res.status(500).json({error: "Failed to load session"});
     }
@@ -164,31 +163,30 @@ app.get("/session/:sessionId", async (req, res) => {
 io.on("connection", (socket) => {
   socket.on("join_session", async ({ sessionId }) => {
     socket.join(sessionId);
+    socket.sessionId = sessionId; // Store for disconnect handling
+
+    // Broadcast updated room size to all in room
+    const roomSize = io.sockets.adapter.rooms.get(sessionId)?.size || 0;
+    io.to(sessionId).emit("room_size", roomSize);
     
     // Auto-delete session after 1 hr of inactivity: we can use Redis EXPIRE
-    await redis.expire(`session:${sessionId}:text`, 3600);
-    await redis.expire(`session:${sessionId}:files`, 3600);
+    await redis.expire(`session:${sessionId}:text`, 43200);
+    await redis.expire(`session:${sessionId}:files`, 43200);
   });
 
   socket.on("update_text", async ({ sessionId, content }) => {
+    // Normalize line endings
+    const normalized = content.replace(/\r\n/g, "\n");
+    
     // Save to Redis
     const textKey = `session:${sessionId}:text`;
-    await redis.set(textKey, content, "EX", 3600);
+    await redis.set(textKey, normalized, "EX", 43200);
 
     // Broadcast to other clients
-    socket.to(sessionId).emit("text_updated", { content });
+    socket.to(sessionId).emit("text_updated", { content: normalized });
   });
 
-  socket.on("save_history", async ({ sessionId, content }) => {
-    const historyKey = `session:${sessionId}:history`;
-    await redis.lpush(historyKey, content);
-    await redis.ltrim(historyKey, 0, 4); // Keep only last 5
-    await redis.expire(historyKey, 3600);
-    
-    // Broadcast history update
-    const newHistory = await redis.lrange(historyKey, 0, 4);
-    socket.to(sessionId).emit("text_updated", { content, newHistory });
-  });
+
 
   socket.on("delete_file", async ({ sessionId, file }) => {
     try {
@@ -213,7 +211,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    // Handle disconnects
+    if (socket.sessionId) {
+      const roomSize = io.sockets.adapter.rooms.get(socket.sessionId)?.size || 0;
+      io.to(socket.sessionId).emit("room_size", roomSize);
+    }
   });
 });
 
@@ -222,7 +223,7 @@ io.on("connection", (socket) => {
 cron.schedule("0 * * * *", async () => {
     console.log("Running hourly R2 cleanup job...");
     try {
-        const oneHourAgo = new Date(Date.now() - 3600 * 1000);
+        const oneHourAgo = new Date(Date.now() - 43200 * 1000);
         let isTruncated = true;
         let continuationToken = undefined;
 

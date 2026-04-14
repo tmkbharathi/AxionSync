@@ -1,6 +1,6 @@
-# ClipBridge Cloud - Full Deployment Guide
+# Aether - Full Deployment Guide
 
-ClipBridge Cloud is a real-time text and file sync application built to operate completely on free-tier cloud resources. This document outlines the exact deployment steps, environment variable configurations, and scaling/security strategies.
+Aether is a real-time text and file sync application built to operate completely on free-tier cloud resources. This document outlines the exact deployment steps, environment variable configurations, and scaling/security strategies.
 
 ## 1. Upstash Redis (Database) Setup
 We use Upstash Redis to store the real-time clipboard text and file metadata with auto-expiration (TTL).

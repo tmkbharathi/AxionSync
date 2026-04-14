@@ -77,11 +77,19 @@ function StarBackground(props: any) {
 export default function Home() {
   const router = useRouter();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [joinKey, setJoinKey] = useState("");
 
   const handleStart = () => {
     setIsGenerating(true);
     const sessionId = uuidv4().slice(0, 8); // Short 8-char session
     router.push(`/${sessionId}`);
+  };
+
+  const handleJoin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (joinKey.trim()) {
+      router.push(`/${joinKey.trim().toLowerCase()}`);
+    }
   };
 
   return (
@@ -99,30 +107,57 @@ export default function Home() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, ease: "easeOut" }}
-            className="text-center"
+            className="text-center w-full max-w-md"
         >
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-sm font-medium text-sky-400">
-            <Zap className="w-4 h-4" />
-            Real-Time Sync 
+          <div className="inline-flex items-center px-4 py-1 rounded-full bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-[11px] font-bold uppercase tracking-widest text-sky-400">
+            Real-Time Sync • <span className="text-sky-300/80">Beta v0.0.2</span>
           </div>
           
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 pb-2 bg-clip-text text-transparent bg-gradient-to-r from-sky-400 via-indigo-400 to-purple-400">
-            ClipBridge Cloud
+            Aether
           </h1>
-          <p className="mt-4 text-lg md:text-xl text-slate-300 max-w-2xl mx-auto leading-relaxed">
-            Instantly sync your clipboard text and share files securely across all your devices. No login required.
+          <p className="mt-4 text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed">
+            Instantly sync your clipboard text and share files securely across all your devices.
           </p>
 
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleStart}
-            disabled={isGenerating}
-            className="mt-10 px-8 py-4 bg-sky-500 hover:bg-sky-400 text-white rounded-xl font-bold text-lg shadow-[0_0_40px_-10px_rgba(14,165,233,0.5)] transition-all flex items-center gap-2 mx-auto disabled:opacity-50"
-          >
-            {isGenerating ? "Creating connection..." : "Start Secure Session"}
-            <ArrowRight className="w-5 h-5" />
-          </motion.button>
+          <div className="mt-10 flex flex-col gap-4">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleStart}
+              disabled={isGenerating}
+              className="w-full px-8 py-4 bg-sky-500 hover:bg-sky-400 text-white rounded-xl font-bold text-lg shadow-[0_0_40px_-10px_rgba(14,165,233,0.5)] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isGenerating ? "Creating session..." : "Create New Session"}
+              <ArrowRight className="w-5 h-5" />
+            </motion.button>
+
+            <div className="flex items-center gap-4 py-2">
+              <div className="h-px flex-1 bg-slate-800" />
+              <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">OR JOIN EXISTING</span>
+              <div className="h-px flex-1 bg-slate-800" />
+            </div>
+
+            <form onSubmit={handleJoin} className="relative group">
+              <input 
+                type="text"
+                placeholder="Enter Session Key"
+                value={joinKey}
+                onChange={(e) => setJoinKey(e.target.value)}
+                className="w-full px-6 py-4 bg-slate-900/40 border border-slate-800 rounded-xl outline-none focus:border-sky-500/50 focus:bg-slate-900/60 transition-all text-center font-mono tracking-widest uppercase placeholder:text-slate-600 placeholder:font-sans placeholder:tracking-normal placeholder:lowercase"
+              />
+              {joinKey.trim().length > 0 && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  type="submit"
+                  className="absolute right-2 top-2 bottom-2 px-4 bg-sky-500 hover:bg-sky-400 text-white rounded-lg font-bold text-sm transition-colors shadow-lg"
+                >
+                  JOIN
+                </motion.button>
+              )}
+            </form>
+          </div>
         </motion.div>
 
         <motion.div 
@@ -144,7 +179,7 @@ export default function Home() {
           <FeatureCard 
             icon={<Shield className="w-6 h-6 text-purple-400" />}
             title="Auto Cleanup"
-            desc="Files and text auto-destruct after 1 hour of inactivity."
+            desc="Files and text auto-destruct after 12 hours of inactivity."
           />
         </motion.div>
 

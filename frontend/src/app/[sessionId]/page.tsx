@@ -7,7 +7,7 @@ import axios from "axios";
 import { QRCodeSVG } from "qrcode.react";
 import { 
   Copy, CheckCircle, UploadCloud, Cloud, X, Download, Trash2, Link, 
-  Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff
+  Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -30,7 +30,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [connected, setConnected] = useState(false);
   
   const [text, setText] = useState("");
-  const [history, setHistory] = useState<string[]>([]);
   const [files, setFiles] = useState<FileMeta[]>([]);
   
   const [activeTab, setActiveTab] = useState<"text" | "files">("text");
@@ -43,13 +42,16 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [copiedText, setCopiedText] = useState(false);
   const [isListening, setIsListening] = useState(false);
 
+  const [roomSize, setRoomSize] = useState(0);
+  const [showRoomSize, setShowRoomSize] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef(text);
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     // Check localStorage cache first for fast offline load
-    const cachedText = localStorage.getItem(`clipbridge:text:${sessionId}`);
+    const cachedText = localStorage.getItem(`aether:text:${sessionId}`);
     if (cachedText) {
       setText(cachedText);
       textRef.current = cachedText;
@@ -58,10 +60,9 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     // Fetch initial state
     axios.get(`${API_URL}/session/${sessionId}`).then((res) => {
       setText(res.data.text || "");
-      if (res.data.history) setHistory(res.data.history.slice(0, 5));
       textRef.current = res.data.text || "";
       setFiles(res.data.files || []);
-      if (res.data.text) localStorage.setItem(`clipbridge:text:${sessionId}`, res.data.text);
+      if (res.data.text) localStorage.setItem(`aether:text:${sessionId}`, res.data.text);
     }).catch(err => console.error("Failed to load session state", err));
 
     // Connect WebSocket
@@ -75,16 +76,26 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
     newSocket.on("disconnect", () => setConnected(false));
 
-    newSocket.on("text_updated", ({ content, newHistory }: { content: string, newHistory?: string[] }) => {
+    newSocket.on("text_updated", ({ content }: { content: string }) => {
       setText(content);
       textRef.current = content;
-      if (newHistory) setHistory(newHistory.slice(0, 5));
-      localStorage.setItem(`clipbridge:text:${sessionId}`, content);
+      localStorage.setItem(`aether:text:${sessionId}`, content);
     });
 
     newSocket.on("file_uploaded", (file: FileMeta) => {
       setFiles((prev) => [file, ...prev.filter(f => f.id !== file.id)]);
     });
+
+    newSocket.on("connected_devices", (count: number) => {
+      setRoomSize(count);
+    });
+
+    // Handle room size updates from backend
+    newSocket.on("room_size", (size: number) => {
+      setRoomSize(size);
+    });
+
+
 
     newSocket.on("file_deleted", (fileId: string) => {
       setFiles((prev) => prev.filter((f) => f.id !== fileId));
@@ -108,7 +119,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           setText((prev) => {
              const updated = prev + (prev.endsWith(' ') || prev.length===0 ? '' : ' ') + finalTranscript;
              textRef.current = updated;
-             localStorage.setItem(`clipbridge:text:${sessionId}`, updated);
+             localStorage.setItem(`aether:text:${sessionId}`, updated);
              if (newSocket && newSocket.connected) {
                newSocket.emit("update_text", { sessionId, content: updated });
              }
@@ -137,7 +148,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     const newText = e.target.value;
     setText(newText);
     textRef.current = newText;
-    localStorage.setItem(`clipbridge:text:${sessionId}`, newText);
+    localStorage.setItem(`aether:text:${sessionId}`, newText);
     
     // Broadcast via socket
     if (socket && connected) {
@@ -145,23 +156,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   };
 
-  const handleSaveToHistory = () => {
-    if (!text.trim()) return;
-    if (socket && connected) {
-      socket.emit("save_history", { sessionId, content: text });
-      // preemptive update
-      setHistory(prev => [text, ...prev.filter(h => h !== text)].slice(0, 5));
-    }
-  };
 
-  const handleRestoreHistory = (h: string) => {
-    setText(h);
-    textRef.current = h;
-    localStorage.setItem(`clipbridge:text:${sessionId}`, h);
-    if (socket && connected) {
-      socket.emit("update_text", { sessionId, content: h });
-    }
-  };
 
   const toggleListening = () => {
       if(isListening) {
@@ -291,10 +286,19 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             <Smartphone className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="font-bold text-lg hidden sm:block">ClipBridge</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-bold text-lg hidden sm:block">Devices</h1>
+              <button 
+                onClick={() => setShowRoomSize(!showRoomSize)}
+                className="p-1 hover:bg-slate-800 rounded-full transition-colors text-slate-500 hover:text-sky-400"
+                title={showRoomSize ? "Hide Device Count" : "Show Device Count"}
+              >
+                {showRoomSize ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
             <div className="text-xs text-slate-400 flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
-              {connected ? 'Connected' : 'Connecting...'}
+              {connected ? (showRoomSize ? `${roomSize} Connected` : 'System Online') : 'Connecting...'}
             </div>
           </div>
         </div>
@@ -348,12 +352,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-semibold text-slate-200">Clipboard</h2>
-              <button 
-                onClick={handleSaveToHistory}
-                className="px-2 py-1 text-[10px] font-bold rounded bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 transition-colors border border-sky-500/30"
-              >
-                SAVE STATE
-              </button>
+
               <button 
                 onClick={toggleListening}
                 className={`p-1.5 rounded text-white transition-colors border ${isListening ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'}`}
@@ -380,24 +379,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             />
           </div>
 
-          {/* History Panel */}
-          {history.length > 0 && (
-            <div className="h-24 md:h-32 shrink-0 border border-slate-800/60 bg-slate-900/40 rounded-xl p-3 flex flex-col">
-              <h3 className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">History (Last 5)</h3>
-              <div className="flex-1 overflow-x-auto flex gap-2 custom-scrollbar pb-1">
-                {history.map((h, i) => (
-                  <button 
-                    key={i} 
-                    onClick={() => handleRestoreHistory(h)}
-                    className="shrink-0 w-32 md:w-40 text-left bg-slate-800 hover:bg-slate-700 p-2 rounded-lg text-xs text-slate-300 font-mono overflow-hidden transition-colors border border-slate-700"
-                    title={h}
-                  >
-                    <div className="line-clamp-3 leading-snug">{h}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+
         </div>
 
         {/* Divider desktop */}
@@ -502,8 +484,10 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       </main>
 
       {/* Footer */}
-      <footer className="text-xs text-slate-500 text-center py-2 bg-slate-950 z-10 border-t border-slate-900">
-        Data auto-destructs after 1 hour of inactivity.
+      <footer className="text-[10px] md:text-xs text-slate-500 text-center py-2 bg-slate-950 z-10 border-t border-slate-900 flex justify-center items-center gap-4">
+        <span>Data auto-destructs after 12 hours of inactivity.</span>
+        <span className="text-slate-700">|</span>
+        <span className="font-medium text-slate-600">Beta v0.0.2</span>
       </footer>
 
       {/* QR Code Modal */}

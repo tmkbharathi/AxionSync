@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "ClipBridge Cloud",
-  description: "Real-time clipboard and file sync across devices.",
+  title: "Aether | Instant Device Sync",
+  description: "Sync your clipboard and files instantly across all devices. No login required.",
 };
 
 export default function RootLayout({

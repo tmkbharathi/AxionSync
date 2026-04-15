@@ -46,6 +46,10 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [roomSize, setRoomSize] = useState(0);
   const [showRoomSize, setShowRoomSize] = useState(false);
 
+  const [isValidating, setIsValidating] = useState(true);
+  const [sessionError, setSessionError] = useState<"expired" | "not_found" | null>(null);
+  const [isActivating, setIsActivating] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef(text);
   const recognitionRef = useRef<any>(null);
@@ -59,12 +63,26 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
 
     // Fetch initial state
-    axios.get(`${API_URL}/session/${sessionId}`).then((res) => {
-      setText(res.data.text || "");
-      textRef.current = res.data.text || "";
-      setFiles(res.data.files || []);
-      if (res.data.text) localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, res.data.text);
-    }).catch(err => console.error("Failed to load session state", err));
+    axios.get(`${API_URL}/session/${sessionId}`)
+      .then((res) => {
+        setText(res.data.text || "");
+        textRef.current = res.data.text || "";
+        setFiles(res.data.files || []);
+        if (res.data.text) localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, res.data.text);
+        setIsValidating(false);
+      })
+      .catch(err => {
+        console.error("Failed to load session state", err);
+        if (err.response?.status === 404) {
+          // Check if data existed in cache; if so, it's definitely expired
+          if (cachedText) setSessionError("expired");
+          else setSessionError("not_found");
+        } else {
+          // General connection or server error
+          setSessionError("not_found"); // Re-using as fallback
+        }
+        setIsValidating(false);
+      });
 
     // Connect WebSocket
     const newSocket = io(SOCKET_URL, { transports: ["websocket"] });
@@ -141,9 +159,21 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
     return () => {
       newSocket.disconnect();
-      if(recognitionRef.current) recognitionRef.current.stop();
+      if (recognitionRef.current) recognitionRef.current.stop();
     };
-  }, [sessionId]);
+  }, [sessionId, SOCKET_URL, API_URL]);
+
+  const handleActivateSession = async () => {
+    setIsActivating(true);
+    try {
+      await axios.post(`${API_URL}/session/${sessionId}/init`);
+      setSessionError(null);
+    } catch (err) {
+      console.error("Failed to activate session", err);
+    } finally {
+      setIsActivating(false);
+    }
+  };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
@@ -272,6 +302,82 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
+
+  if (isValidating) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center gap-6"
+        >
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Smartphone className="w-6 h-6 text-blue-400" />
+            </div>
+          </div>
+          <div className="text-center">
+            <h2 className="text-xl font-bold mb-2">Securing Connection</h2>
+            <p className="text-slate-400 text-sm">Verifying AxionSync instance...</p>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (sessionError) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4 overflow-hidden relative">
+        {/* Ambient background glows */}
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none" />
+        
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl shadow-2xl relative z-10 text-center"
+        >
+          <div className="w-20 h-20 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl border border-slate-700">
+             {sessionError === 'expired' ? (
+                <Loader2 className="w-10 h-10 text-rose-400 opacity-80" />
+             ) : (
+                <Cloud className="w-10 h-10 text-amber-400 opacity-80" />
+             )}
+          </div>
+          
+          <h1 className="text-2xl font-bold mb-3">
+            {sessionError === 'expired' ? 'Session Expired' : 'Room Not Found'}
+          </h1>
+          
+          <p className="text-slate-400 text-sm mb-8 leading-relaxed">
+            {sessionError === 'expired' 
+              ? "This session has been automatically purged after 12 hours of inactivity to protect your privacy."
+              : `The session "${sessionId}" hasn't been initialized yet. Would you like to start a new workspace here?`}
+          </p>
+
+          <div className="flex flex-col gap-3">
+            {sessionError === 'not_found' && (
+              <button 
+                onClick={handleActivateSession}
+                disabled={isActivating}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
+              >
+                {isActivating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                {isActivating ? 'Initializing...' : 'Start This Room'}
+              </button>
+            )}
+            <button 
+              onClick={() => window.location.href = '/'}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-xl transition-all border border-slate-700"
+            >
+              Back to Home
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative selection:bg-blue-500/30">

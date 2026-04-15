@@ -8,7 +8,9 @@ import { QRCodeSVG } from "qrcode.react";
 import { 
   Copy, CheckCircle, UploadCloud, Cloud, X, Download, Trash2, Link, 
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
-  Info, Monitor, Tablet, Globe
+  Info, Monitor, Tablet, Globe,
+  PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
+  ChevronsRight, ChevronsLeft
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
@@ -23,6 +25,7 @@ interface FileMeta {
   mimeType: string;
   uploadedAt: number;
   s3Key: string;
+  previewUrl?: string;
 }
 
 interface DeviceInfo {
@@ -90,7 +93,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [isListening, setIsListening] = useState(false);
 
   const [roomSize, setRoomSize] = useState(0);
-  const [showRoomSize, setShowRoomSize] = useState(false);
 
   const [isValidating, setIsValidating] = useState(true);
   const [sessionError, setSessionError] = useState<"expired" | "not_found" | null>(null);
@@ -98,10 +100,12 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
   const [activeDevices, setActiveDevices] = useState<ActiveDevice[]>([]);
   const [showDevicesModal, setShowDevicesModal] = useState(false);
+  const [isFilePanelCollapsed, setIsFilePanelCollapsed] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef(text);
   const recognitionRef = useRef<any>(null);
+  const hasAutoAttempted = useRef(false);
 
   useEffect(() => {
     // Check localStorage cache first for fast offline load
@@ -122,6 +126,15 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       })
       .catch(err => {
         console.error("Failed to load session state", err);
+        
+        // Smart Auto-Init: If 404 but we have no local cache, 
+        // it means we just created it but backend isn't ready. Try activating once.
+        if (err.response?.status === 404 && !cachedText && !hasAutoAttempted.current) {
+          hasAutoAttempted.current = true;
+          handleActivateSession();
+          return;
+        }
+
         if (err.response?.status === 404) {
           // Check if data existed in cache; if so, it's definitely expired
           if (cachedText) setSessionError("expired");
@@ -451,23 +464,21 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           <div>
             <div className="flex items-center gap-2">
               <h1 className="font-bold text-lg hidden sm:block">Devices</h1>
-              <button 
-                onClick={() => setShowRoomSize(!showRoomSize)}
-                className="p-1 hover:bg-slate-800 rounded-full transition-colors text-slate-500 hover:text-blue-400"
-                title={showRoomSize ? "Hide Device Count" : "Show Device Count"}
-              >
-                {showRoomSize ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
             </div>
             <div className="text-xs text-slate-400 flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
-              <button 
-                onClick={() => setShowDevicesModal(true)}
-                className="hover:text-blue-400 transition-colors flex items-center gap-1 group"
-              >
-                {connected ? (showRoomSize ? `${roomSize} Connected` : 'System Online') : 'Connecting...'}
-                {connected && <Info className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />}
-              </button>
+              <div className="flex items-center gap-1.5">
+                <span>{connected ? `${roomSize} Connected` : 'System Online'}</span>
+                {connected && (
+                  <button 
+                    onClick={() => setShowDevicesModal(true)}
+                    className="p-0.5 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-blue-400"
+                    title="View Device List"
+                  >
+                    <Info className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -517,7 +528,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative z-10">
         
         {/* TEXT PANEL */}
-        <div className={`w-full md:w-3/5 lg:w-2/3 h-full flex flex-col items-stretch p-4 md:p-6 transition-transform ${activeTab === 'text' ? 'block' : 'hidden md:flex'}`}>
+        <div className={`h-full flex flex-col items-stretch p-4 md:p-6 transition-all duration-300 ease-in-out ${activeTab === 'text' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-full' : 'w-full md:w-3/5 lg:w-2/3'}`}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-semibold text-slate-200">Clipboard</h2>
@@ -551,11 +562,19 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
         </div>
 
-        {/* Divider desktop */}
-        <div className="hidden md:block w-px bg-slate-800/60" />
+        {/* Divider desktop with collapse toggle */}
+        <div className="hidden md:flex flex-col items-center relative w-px bg-slate-800/60 h-full">
+            <button
+                onClick={() => setIsFilePanelCollapsed(!isFilePanelCollapsed)}
+                className={`absolute top-1/2 -translate-y-1/2 z-20 w-6 h-10 bg-slate-900 border border-slate-700 flex items-center justify-center rounded-sm hover:bg-slate-800 transition-all ${isFilePanelCollapsed ? '-left-3' : '-left-3'}`}
+                title={isFilePanelCollapsed ? "Show Files" : "Collapse Files"}
+            >
+                {isFilePanelCollapsed ? <ChevronsLeft className="w-4 h-4 text-blue-400" /> : <ChevronsRight className="w-4 h-4 text-slate-500" />}
+            </button>
+        </div>
 
         {/* FILE MANAGER PANEL */}
-        <div className={`w-full md:w-2/5 lg:w-1/3 h-full bg-slate-900/20 flex flex-col overflow-hidden ${activeTab === 'files' ? 'block' : 'hidden md:flex'}`}>
+        <div className={`h-full bg-slate-900/20 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${activeTab === 'files' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-full md:w-2/5 lg:w-1/3 opacity-100'}`}>
           
           <div className="p-4 md:p-6 border-b border-slate-800/60">
             <div className="flex items-center justify-between mb-4">
@@ -618,12 +637,23 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                       exit={{ opacity: 0, scale: 0.95 }}
                       className="bg-slate-800/40 border border-slate-700/50 p-3 rounded-xl flex items-center justify-between group hover:bg-slate-800/80 transition-colors"
                     >
-                      <div className="overflow-hidden pr-3">
-                        <p className="text-sm font-medium text-slate-200 truncate" title={f.name}>{f.name}</p>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                          <span>{formatSize(f.size)}</span>
-                          <span>•</span>
-                          <span>{formatDistanceToNow(new Date(f.uploadedAt), { addSuffix: true })}</span>
+                      <div className="flex items-center gap-3 overflow-hidden pr-3">
+                        {f.previewUrl ? (
+                          <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 shrink-0">
+                             <img src={f.previewUrl} alt={f.name} className="w-full h-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
+                             <Globe className="w-5 h-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-slate-200 truncate" title={f.name}>{f.name}</p>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                            <span>{formatSize(f.size)}</span>
+                            <span>•</span>
+                            <span>{formatDistanceToNow(new Date(f.uploadedAt), { addSuffix: true })}</span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">

@@ -70,7 +70,7 @@ function StarBackground(props: any) {
       pointsRef.current.position.y += (targetPosY - pointsRef.current.position.y) * 0.03;
       
       // Subtle float oscillation
-      pointsRef.current.position.z = Math.sin(state.clock.getElapsedTime() * 0.5) * 0.02;
+      pointsRef.current.position.z = Math.sin(state.clock.elapsedTime * 0.5) * 0.02;
     }
   });
 

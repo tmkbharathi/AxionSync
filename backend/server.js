@@ -173,7 +173,24 @@ app.get("/session/:sessionId", async (req, res) => {
     }
 
     const filesRaw = await redis.lrange(filesKey, 0, -1);
-    const files = filesRaw.map(f => JSON.parse(f));
+    const files = await Promise.all(
+      filesRaw.map(async (f) => {
+        const file = JSON.parse(f);
+        // Add signed preview URL for images
+        if (file.mimeType && file.mimeType.startsWith("image/")) {
+          try {
+            const command = new GetObjectCommand({
+              Bucket: S3_BUCKET_NAME,
+              Key: file.s3Key,
+            });
+            file.previewUrl = await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1 hr expiry
+          } catch (err) {
+            console.error("Preview URL generation failed", err);
+          }
+        }
+        return file;
+      })
+    );
 
     // Refresh active status if it was about to expire but data still exists
     if (!isActive) {
@@ -283,9 +300,25 @@ cron.schedule("0 * * * *", async () => {
       const response = await s3.send(listCommand);
       const objects = response.Contents || [];
 
-      const keysToDelete = objects
-        .filter(obj => obj.LastModified && obj.LastModified < twelveHoursAgo)
-        .map(obj => ({ Key: obj.Key }));
+      const keysToDelete = [];
+      for (const obj of objects) {
+        if (obj.LastModified && obj.LastModified < twelveHoursAgo) {
+          try {
+            // Extract sessionId from the key (format: sessionId/fileId)
+            const sessionId = obj.Key.split("/")[0];
+            
+            // Check if session is still active in Redis
+            // If the key exists, the session is considered "alive" and we keep the files
+            const isActive = await redis.exists(`session:${sessionId}:active`);
+            
+            if (!isActive) {
+              keysToDelete.push({ Key: obj.Key });
+            }
+          } catch (err) {
+            console.error(`Error checking activity for ${obj.Key}:`, err);
+          }
+        }
+      }
 
       for (const keyObj of keysToDelete) {
         await s3.send(new DeleteObjectCommand({

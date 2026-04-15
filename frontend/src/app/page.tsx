@@ -4,9 +4,13 @@ import { motion } from "framer-motion";
 import { Copy, ArrowRight, Cloud, Shield, Zap } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
+import axios from "axios";
 import { useState, useRef, useMemo, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
+import { siteConfig } from "@/config/site";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 // Animated Particle Background using Three.js
 function StarBackground(props: any) {
@@ -66,7 +70,7 @@ function StarBackground(props: any) {
       pointsRef.current.position.y += (targetPosY - pointsRef.current.position.y) * 0.03;
       
       // Subtle float oscillation
-      pointsRef.current.position.z = Math.sin(state.clock.elapsedTime * 0.5) * 0.02;
+      pointsRef.current.position.z = Math.sin(state.clock.getElapsedTime() * 0.5) * 0.02;
     }
   });
 
@@ -90,10 +94,21 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [joinKey, setJoinKey] = useState("");
 
-  const handleStart = () => {
+  const handleStart = async () => {
     setIsGenerating(true);
-    const sessionId = uuidv4().slice(0, 8); // Short 8-char session
-    router.push(`/${sessionId}`);
+    try {
+      const sessionId = uuidv4().slice(0, 8); // Short 8-char session
+      // Initialize the session on the backend to mark it as active
+      await axios.post(`${API_URL}/session/${sessionId}/init`);
+      router.push(`/${sessionId}`);
+    } catch (err) {
+      console.error("Failed to initialize session:", err);
+      // Fallback: still redirect, the session page will handle the 404 or retry
+      const sessionId = uuidv4().slice(0, 8);
+      router.push(`/${sessionId}`);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleJoin = (e: React.FormEvent) => {
@@ -122,11 +137,11 @@ export default function Home() {
         >
           <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-[11px] font-bold uppercase tracking-widest text-cyan-400">
             <Zap className="w-3 h-3 fill-cyan-400" />
-            Real-Time Sync • <span className="text-cyan-300/80">Beta v0.0.2</span>
+            Real-Time Sync • <span className="text-cyan-300/80">Beta v{siteConfig.version}</span>
           </div>
           
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 pb-2 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500">
-            Aether
+            {siteConfig.name}
           </h1>
           <p className="mt-4 text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed">
             Instantly sync your clipboard text and share files securely across all your devices.

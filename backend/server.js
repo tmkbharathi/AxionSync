@@ -24,12 +24,12 @@ const S3_BUCKET_NAME = process.env.S3_BUCKET_NAME || "clipbridge";
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 const redis = new Redis(REDIS_URL, {
-    retryStrategy: (times) => Math.min(times * 100, 3000),
-    maxRetriesPerRequest: null
+  retryStrategy: (times) => Math.min(times * 100, 3000),
+  maxRetriesPerRequest: null
 });
 
 redis.on("error", (error) => {
-    // Keeping this silent to prevent console spam when running locally without Redis
+  // Keeping this silent to prevent console spam when running locally without Redis
 });
 
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
@@ -68,7 +68,7 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
 
   try {
     const filesKey = `session:${sessionId}:files`;
-    
+
     // 1. Limit total files per session (max 20)
     const currentFilesCount = await redis.llen(filesKey);
     if (currentFilesCount >= 20) {
@@ -79,7 +79,7 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
     const fileHash = crypto.createHash("sha256").update(file.buffer).digest("hex");
     const existingFilesRaw = await redis.lrange(filesKey, 0, -1);
     const existingFiles = existingFilesRaw.map(f => JSON.parse(f));
-    
+
     if (existingFiles.some(f => f.hash === fileHash)) {
       return res.status(409).json({ error: "File already uploaded in this session." });
     }
@@ -109,11 +109,12 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
     // Save metadata to Redis and reset expiry
     await redis.lpush(filesKey, JSON.stringify(fileMeta));
     await redis.expire(filesKey, 43200);
-    
+
     // Reset text expiry so session stays alive
     const textKey = `session:${sessionId}:text`;
-    const textTtl = await redis.ttl(textKey);
-    if(textTtl !== -2) await redis.expire(textKey, 43200);
+    const activeKey = `session:${sessionId}:active`;
+    await redis.expire(textKey, 43200);
+    await redis.expire(activeKey, 43200);
 
     // Notify clients in session
     io.to(sessionId).emit("file_uploaded", fileMeta);
@@ -129,7 +130,7 @@ app.get("/download", async (req, res) => {
   try {
     const s3Key = req.query.s3Key;
     if (!s3Key) return res.status(400).json({ error: "Missing s3Key" });
-    
+
     const command = new GetObjectCommand({
       Bucket: S3_BUCKET_NAME,
       Key: s3Key,
@@ -142,20 +143,47 @@ app.get("/download", async (req, res) => {
   }
 });
 
+// Initialize a session
+app.post("/session/:sessionId/init", async (req, res) => {
+  const { sessionId } = req.params;
+  try {
+    const activeKey = `session:${sessionId}:active`;
+    await redis.set(activeKey, "1", "EX", 43200); // 12 hours heartbeat
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to initialize session" });
+  }
+});
+
 app.get("/session/:sessionId", async (req, res) => {
-    const { sessionId } = req.params;
-    try {
-        const textKey = `session:${sessionId}:text`;
-        const historyKey = `session:${sessionId}:history`;
-        const filesKey = `session:${sessionId}:files`;
-        
-        const text = await redis.get(textKey) || "";
-        const filesRaw = await redis.lrange(filesKey, 0, -1);
-        const files = filesRaw.map(f => JSON.parse(f));
-        res.json({ text, files });
-    } catch (e) {
-        res.status(500).json({error: "Failed to load session"});
+  const { sessionId } = req.params;
+  try {
+    const activeKey = `session:${sessionId}:active`;
+    const textKey = `session:${sessionId}:text`;
+    const filesKey = `session:${sessionId}:files`;
+
+    // A session is valid if it's explicitly active OR has data
+    const isActive = await redis.exists(activeKey);
+    const text = await redis.get(textKey);
+    const filesCount = await redis.llen(filesKey);
+
+    if (!isActive && text === null && filesCount === 0) {
+      return res.status(404).json({ error: "Session not found or expired" });
     }
+
+    const filesRaw = await redis.lrange(filesKey, 0, -1);
+    const files = filesRaw.map(f => JSON.parse(f));
+
+    // Refresh active status if it was about to expire but data still exists
+    if (!isActive) {
+      await redis.set(activeKey, "1", "EX", 43200);
+    }
+
+    res.json({ text: text || "", files });
+  } catch (e) {
+    console.error("Session load error:", e);
+    res.status(500).json({ error: "Failed to load session" });
+  }
 });
 
 // --- WEBSOCKETS ---
@@ -165,10 +193,15 @@ io.on("connection", (socket) => {
     socket.join(sessionId);
     socket.sessionId = sessionId; // Store for disconnect handling
 
+    // Refresh overall session expiry on join
+    await redis.expire(`session:${sessionId}:active`, 43200);
+    await redis.expire(`session:${sessionId}:text`, 43200);
+    await redis.expire(`session:${sessionId}:files`, 43200);
+
     // Broadcast updated room size to all in room
     const roomSize = io.sockets.adapter.rooms.get(sessionId)?.size || 0;
     io.to(sessionId).emit("room_size", roomSize);
-    
+
     // Auto-delete session after 1 hr of inactivity: we can use Redis EXPIRE
     await redis.expire(`session:${sessionId}:text`, 43200);
     await redis.expire(`session:${sessionId}:files`, 43200);
@@ -177,10 +210,12 @@ io.on("connection", (socket) => {
   socket.on("update_text", async ({ sessionId, content }) => {
     // Normalize line endings
     const normalized = content.replace(/\r\n/g, "\n");
-    
-    // Save to Redis
+
+    // Save to Redis and refresh heartbeat
     const textKey = `session:${sessionId}:text`;
+    const activeKey = `session:${sessionId}:active`;
     await redis.set(textKey, normalized, "EX", 43200);
+    await redis.expire(activeKey, 43200);
 
     // Broadcast to other clients
     socket.to(sessionId).emit("text_updated", { content: normalized });
@@ -190,23 +225,23 @@ io.on("connection", (socket) => {
 
   socket.on("delete_file", async ({ sessionId, file }) => {
     try {
-        // Delete from S3/R2
-        await s3.send(new DeleteObjectCommand({
-            Bucket: S3_BUCKET_NAME,
-            Key: file.s3Key
-        }));
+      // Delete from S3/R2
+      await s3.send(new DeleteObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: file.s3Key
+      }));
 
-        // Remove from Redis
-        const filesKey = `session:${sessionId}:files`;
-        const filesRaw = await redis.lrange(filesKey, 0, -1);
-        const fileStr = filesRaw.find(f => JSON.parse(f).id === file.id);
-        if (fileStr) {
-            await redis.lrem(filesKey, 1, fileStr);
-        }
+      // Remove from Redis
+      const filesKey = `session:${sessionId}:files`;
+      const filesRaw = await redis.lrange(filesKey, 0, -1);
+      const fileStr = filesRaw.find(f => JSON.parse(f).id === file.id);
+      if (fileStr) {
+        await redis.lrem(filesKey, 1, fileStr);
+      }
 
-        io.to(sessionId).emit("file_deleted", file.id);
-    } catch(err) {
-        console.error("Delete error:", err);
+      io.to(sessionId).emit("file_deleted", file.id);
+    } catch (err) {
+      console.error("Delete error:", err);
     }
   });
 
@@ -221,39 +256,39 @@ io.on("connection", (socket) => {
 // --- CRON JOBS FOR AUTO CLEANUP ---
 // Ran every hour: deletes files older than 1 hr from R2
 cron.schedule("0 * * * *", async () => {
-    console.log("Running hourly R2 cleanup job...");
-    try {
-        const oneHourAgo = new Date(Date.now() - 43200 * 1000);
-        let isTruncated = true;
-        let continuationToken = undefined;
+  console.log("Running hourly R2 cleanup job...");
+  try {
+    const twelveHoursAgo = new Date(Date.now() - 43200 * 1000);
+    let isTruncated = true;
+    let continuationToken = undefined;
 
-        while (isTruncated) {
-            const listCommand = new ListObjectsV2Command({
-                Bucket: S3_BUCKET_NAME,
-                ContinuationToken: continuationToken,
-            });
-            const response = await s3.send(listCommand);
-            const objects = response.Contents || [];
+    while (isTruncated) {
+      const listCommand = new ListObjectsV2Command({
+        Bucket: S3_BUCKET_NAME,
+        ContinuationToken: continuationToken,
+      });
+      const response = await s3.send(listCommand);
+      const objects = response.Contents || [];
 
-            const keysToDelete = objects
-                .filter(obj => obj.LastModified && obj.LastModified < oneHourAgo)
-                .map(obj => ({ Key: obj.Key }));
+      const keysToDelete = objects
+        .filter(obj => obj.LastModified && obj.LastModified < twelveHoursAgo)
+        .map(obj => ({ Key: obj.Key }));
 
-            for (const keyObj of keysToDelete) {
-                await s3.send(new DeleteObjectCommand({
-                    Bucket: S3_BUCKET_NAME,
-                    Key: keyObj.Key
-                }));
-                console.log(`Auto-cleaned stale object: ${keyObj.Key}`);
-            }
+      for (const keyObj of keysToDelete) {
+        await s3.send(new DeleteObjectCommand({
+          Bucket: S3_BUCKET_NAME,
+          Key: keyObj.Key
+        }));
+        console.log(`Auto-cleaned stale object: ${keyObj.Key}`);
+      }
 
-            isTruncated = response.IsTruncated || false;
-            continuationToken = response.NextContinuationToken;
-        }
-        console.log("Hourly R2 cleanup finished.");
-    } catch (err) {
-        console.error("Cleanup job error:", err);
+      isTruncated = response.IsTruncated || false;
+      continuationToken = response.NextContinuationToken;
     }
+    console.log("Hourly R2 cleanup finished.");
+  } catch (err) {
+    console.error("Cleanup job error:", err);
+  }
 });
 
 server.listen(PORT, () => {

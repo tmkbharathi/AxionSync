@@ -29,7 +29,7 @@ const redis = new Redis(REDIS_URL, {
 });
 
 redis.on("error", (error) => {
-  // Keeping this silent to prevent console spam when running locally without Redis
+  console.error("Redis connection error:", error);
 });
 
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
@@ -151,6 +151,7 @@ app.post("/session/:sessionId/init", async (req, res) => {
     await redis.set(activeKey, "1", "EX", 43200); // 12 hours heartbeat
     res.json({ success: true });
   } catch (e) {
+    console.error(`Failed to initialize session ${sessionId}:`, e);
     res.status(500).json({ error: "Failed to initialize session" });
   }
 });
@@ -189,22 +190,29 @@ app.get("/session/:sessionId", async (req, res) => {
 // --- WEBSOCKETS ---
 
 io.on("connection", (socket) => {
-  socket.on("join_session", async ({ sessionId }) => {
+  socket.on("join_session", async ({ sessionId, deviceInfo }) => {
     socket.join(sessionId);
     socket.sessionId = sessionId; // Store for disconnect handling
+    socket.deviceInfo = deviceInfo || { name: "Unknown Device", platform: "unknown", browser: "unknown" };
 
     // Refresh overall session expiry on join
-    await redis.expire(`session:${sessionId}:active`, 43200);
-    await redis.expire(`session:${sessionId}:text`, 43200);
-    await redis.expire(`session:${sessionId}:files`, 43200);
+    try {
+      await redis.expire(`session:${sessionId}:active`, 43200);
+      await redis.expire(`session:${sessionId}:text`, 43200);
+      await redis.expire(`session:${sessionId}:files`, 43200);
+    } catch (e) {
+      console.warn("Could not refresh session expiry in Redis:", e.message);
+    }
 
-    // Broadcast updated room size to all in room
-    const roomSize = io.sockets.adapter.rooms.get(sessionId)?.size || 0;
-    io.to(sessionId).emit("room_size", roomSize);
-
-    // Auto-delete session after 1 hr of inactivity: we can use Redis EXPIRE
-    await redis.expire(`session:${sessionId}:text`, 43200);
-    await redis.expire(`session:${sessionId}:files`, 43200);
+    // Broadcast updated device list to all in room
+    const sockets = await io.in(sessionId).fetchSockets();
+    const devices = sockets.map(s => ({
+      id: s.id,
+      info: s.deviceInfo
+    }));
+    
+    io.to(sessionId).emit("room_devices", devices);
+    io.to(sessionId).emit("room_size", devices.length);
   });
 
   socket.on("update_text", async ({ sessionId, content }) => {
@@ -245,10 +253,15 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     if (socket.sessionId) {
-      const roomSize = io.sockets.adapter.rooms.get(socket.sessionId)?.size || 0;
-      io.to(socket.sessionId).emit("room_size", roomSize);
+      const sockets = await io.in(socket.sessionId).fetchSockets();
+      const devices = sockets.map(s => ({
+        id: s.id,
+        info: s.deviceInfo
+      }));
+      io.to(socket.sessionId).emit("room_devices", devices);
+      io.to(socket.sessionId).emit("room_size", devices.length);
     }
   });
 });

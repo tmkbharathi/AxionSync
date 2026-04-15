@@ -7,7 +7,8 @@ import axios from "axios";
 import { QRCodeSVG } from "qrcode.react";
 import { 
   Copy, CheckCircle, UploadCloud, Cloud, X, Download, Trash2, Link, 
-  Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff
+  Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
+  Info, Monitor, Tablet, Globe
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
@@ -23,6 +24,51 @@ interface FileMeta {
   uploadedAt: number;
   s3Key: string;
 }
+
+interface DeviceInfo {
+  name: string;
+  platform: string;
+  browser: string;
+}
+
+interface ActiveDevice {
+  id: string;
+  info: DeviceInfo;
+}
+
+const getDeviceInfo = (): DeviceInfo => {
+  if (typeof window === "undefined") return { name: "Unknown", platform: "unknown", browser: "unknown" };
+  
+  const ua = navigator.userAgent;
+  const vendor = navigator.vendor || "";
+  
+  let platform = "desktop";
+  let browser = "Globe";
+  let name = "PC";
+
+  // Platform detection
+  if (/iPad|iPhone|iPod/.test(ua)) platform = "mobile";
+  else if (/Android/.test(ua)) platform = "mobile";
+  else if (/Windows/.test(ua)) platform = "desktop";
+  else if (/Macintosh/.test(ua)) platform = "desktop";
+  
+  // Specific device name
+  if (/iPhone/.test(ua)) name = "iPhone";
+  else if (/iPad/.test(ua)) name = "iPad";
+  else if (/Android/.test(ua)) name = "Android Device";
+  else if (/Macintosh/.test(ua)) name = "MacBook";
+  else if (/Windows/.test(ua)) name = "Windows PC";
+  else name = "Device";
+
+  // Browser detection
+  if (/Chrome/.test(ua) && /Google/.test(vendor)) browser = "Chrome";
+  else if (/Safari/.test(ua) && /Apple/.test(vendor)) browser = "Safari";
+  else if (/Firefox/.test(ua)) browser = "Firefox";
+  else if (/Edg/.test(ua)) browser = "Edge";
+  else browser = "Browser";
+
+  return { name, platform, browser };
+};
 
 export default function SessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = use(params);
@@ -49,6 +95,9 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [isValidating, setIsValidating] = useState(true);
   const [sessionError, setSessionError] = useState<"expired" | "not_found" | null>(null);
   const [isActivating, setIsActivating] = useState(false);
+
+  const [activeDevices, setActiveDevices] = useState<ActiveDevice[]>([]);
+  const [showDevicesModal, setShowDevicesModal] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef(text);
@@ -90,7 +139,10 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
     newSocket.on("connect", () => {
       setConnected(true);
-      newSocket.emit("join_session", { sessionId });
+      newSocket.emit("join_session", { 
+        sessionId, 
+        deviceInfo: getDeviceInfo() 
+      });
     });
 
     newSocket.on("disconnect", () => setConnected(false));
@@ -112,6 +164,10 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     // Handle room size updates from backend
     newSocket.on("room_size", (size: number) => {
       setRoomSize(size);
+    });
+
+    newSocket.on("room_devices", (devices: ActiveDevice[]) => {
+      setActiveDevices(devices);
     });
 
 
@@ -405,7 +461,13 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             </div>
             <div className="text-xs text-slate-400 flex items-center gap-2">
               <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
-              {connected ? (showRoomSize ? `${roomSize} Connected` : 'System Online') : 'Connecting...'}
+              <button 
+                onClick={() => setShowDevicesModal(true)}
+                className="hover:text-blue-400 transition-colors flex items-center gap-1 group"
+              >
+                {connected ? (showRoomSize ? `${roomSize} Connected` : 'System Online') : 'Connecting...'}
+                {connected && <Info className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />}
+              </button>
             </div>
           </div>
         </div>
@@ -597,7 +659,63 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         <span className="font-medium text-slate-600">Beta v{siteConfig.version}</span>
       </footer>
 
-      {/* QR Code Modal */}
+      {/* Device Info Modal */}
+      <AnimatePresence>
+        {showDevicesModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setShowDevicesModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl flex flex-col w-full max-w-sm"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <Monitor className="w-5 h-5 text-blue-400" />
+                  Connected Devices
+                </h3>
+                <button 
+                  onClick={() => setShowDevicesModal(false)}
+                  className="p-1 rounded-md text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {activeDevices.map((device) => (
+                  <div key={device.id} className="flex items-center gap-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
+                    <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-blue-400 border border-slate-700">
+                      {device.info.platform === 'mobile' ? <Smartphone className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold truncate">{device.id === socket?.id ? "This Device" : device.info.name}</p>
+                        {device.id === socket?.id && (
+                           <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded uppercase">You</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">{device.info.browser} • {device.info.platform}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <p className="mt-6 text-[10px] text-slate-500 text-center">
+                Device info is refreshed automatically in real-time.
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showQr && (
           <motion.div

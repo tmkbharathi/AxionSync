@@ -1,6 +1,6 @@
-# Aether — Real-time Synchronized Digital Workspace
+# AxionSync — Real-time Synchronized Digital Workspace
 
-A premium, high-performance real-time data and file synchronization platform. Built to function as a seamless bridge between your devices, **Aether** combines the power of WebSockets with a state-of-the-art UI to provide an instantaneous, secure, and ephemeral synchronization experience.
+A premium, high-performance real-time data and file synchronization platform. Built to function as a seamless bridge between your devices, **AxionSync** combines the power of WebSockets with a state-of-the-art UI to provide an instantaneous, secure, and ephemeral synchronization experience.
 
 ---
 
@@ -42,8 +42,8 @@ A premium, high-performance real-time data and file synchronization platform. Bu
 
 ### 1. Repository Setup
 ```bash
-git clone https://github.com/yourusername/aether.git
-cd aether
+git clone https://github.com/yourusername/axionsync.git
+cd axionsync
 ```
 
 ### 2. Backend Configuration
@@ -107,4 +107,4 @@ A huge thank you to **Google Antigravity** for the advanced AI assistance in arc
 
 ---
 
-> Built with ❤️ by the Aether Team. Optimized for the modern web.
+> Built with ❤️ by the AxionSync Team. Optimized for the modern web.

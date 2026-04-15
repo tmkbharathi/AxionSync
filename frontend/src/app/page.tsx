@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useState, useRef, useMemo, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
+import { siteConfig } from "@/config/site";
 
 // Animated Particle Background using Three.js
 function StarBackground(props: any) {
@@ -122,11 +123,11 @@ export default function Home() {
         >
           <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-[11px] font-bold uppercase tracking-widest text-cyan-400">
             <Zap className="w-3 h-3 fill-cyan-400" />
-            Real-Time Sync • <span className="text-cyan-300/80">Beta v0.0.2</span>
+            Real-Time Sync • <span className="text-cyan-300/80">Beta v{siteConfig.version}</span>
           </div>
           
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 pb-2 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500">
-            Aether
+            {siteConfig.name}
           </h1>
           <p className="mt-4 text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed">
             Instantly sync your clipboard text and share files securely across all your devices.

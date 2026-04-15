@@ -10,6 +10,7 @@ import {
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { siteConfig } from "@/config/site";
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -51,7 +52,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
   useEffect(() => {
     // Check localStorage cache first for fast offline load
-    const cachedText = localStorage.getItem(`aether:text:${sessionId}`);
+    const cachedText = localStorage.getItem(`${siteConfig.slug}:text:${sessionId}`);
     if (cachedText) {
       setText(cachedText);
       textRef.current = cachedText;
@@ -62,7 +63,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       setText(res.data.text || "");
       textRef.current = res.data.text || "";
       setFiles(res.data.files || []);
-      if (res.data.text) localStorage.setItem(`aether:text:${sessionId}`, res.data.text);
+      if (res.data.text) localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, res.data.text);
     }).catch(err => console.error("Failed to load session state", err));
 
     // Connect WebSocket
@@ -79,7 +80,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     newSocket.on("text_updated", ({ content }: { content: string }) => {
       setText(content);
       textRef.current = content;
-      localStorage.setItem(`aether:text:${sessionId}`, content);
+      localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, content);
     });
 
     newSocket.on("file_uploaded", (file: FileMeta) => {
@@ -119,7 +120,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           setText((prev) => {
              const updated = prev + (prev.endsWith(' ') || prev.length===0 ? '' : ' ') + finalTranscript;
              textRef.current = updated;
-             localStorage.setItem(`aether:text:${sessionId}`, updated);
+             localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, updated);
              if (newSocket && newSocket.connected) {
                newSocket.emit("update_text", { sessionId, content: updated });
              }
@@ -148,7 +149,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     const newText = e.target.value;
     setText(newText);
     textRef.current = newText;
-    localStorage.setItem(`aether:text:${sessionId}`, newText);
+    localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, newText);
     
     // Broadcast via socket
     if (socket && connected) {
@@ -487,7 +488,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       <footer className="text-[10px] md:text-xs text-slate-500 text-center py-2 bg-slate-950 z-10 border-t border-slate-900 flex justify-center items-center gap-4">
         <span>Data auto-destructs after 12 hours of inactivity.</span>
         <span className="text-slate-700">|</span>
-        <span className="font-medium text-slate-600">Beta v0.0.2</span>
+        <span className="font-medium text-slate-600">Beta v{siteConfig.version}</span>
       </footer>
 
       {/* QR Code Modal */}

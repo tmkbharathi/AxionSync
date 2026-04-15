@@ -70,7 +70,7 @@ function StarBackground(props: any) {
       pointsRef.current.position.y += (targetPosY - pointsRef.current.position.y) * 0.03;
       
       // Subtle float oscillation
-      pointsRef.current.position.z = Math.sin(state.clock.getElapsedTime() * 0.5) * 0.02;
+      pointsRef.current.position.z = Math.sin(state.clock.elapsedTime * 0.5) * 0.02;
     }
   });
 
@@ -96,15 +96,15 @@ export default function Home() {
 
   const handleStart = async () => {
     setIsGenerating(true);
+    const sessionId = uuidv4().slice(0, 8); // Generate ID once
     try {
-      const sessionId = uuidv4().slice(0, 8); // Short 8-char session
       // Initialize the session on the backend to mark it as active
       await axios.post(`${API_URL}/session/${sessionId}/init`);
       router.push(`/${sessionId}`);
     } catch (err) {
       console.error("Failed to initialize session:", err);
-      // Fallback: still redirect, the session page will handle the 404 or retry
-      const sessionId = uuidv4().slice(0, 8);
+      // Fallback: still redirect to the SAME sessionId. 
+      // The session page will detect it's not initialized and offer a "Start This Room" button.
       router.push(`/${sessionId}`);
     } finally {
       setIsGenerating(false);

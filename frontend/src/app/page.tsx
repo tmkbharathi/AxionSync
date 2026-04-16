@@ -17,6 +17,7 @@ function StarBackground(props: any) {
   const groupRef = useRef<any>(null);
   const pointsRef = useRef<any>(null);
   const pointer = useRef({ x: 0, y: 0 });
+  const timeRef = useRef(0);
 
   useEffect(() => {
     const handlePointerMove = (e: PointerEvent) => {
@@ -45,6 +46,8 @@ function StarBackground(props: any) {
   }, []);
 
   useFrame((state, delta) => {
+    timeRef.current += delta;
+
     // 1. Continuous slow drift
     if (groupRef.current) {
       groupRef.current.rotation.x -= delta / 15;
@@ -70,7 +73,7 @@ function StarBackground(props: any) {
       pointsRef.current.position.y += (targetPosY - pointsRef.current.position.y) * 0.03;
       
       // Subtle float oscillation
-      pointsRef.current.position.z = Math.sin(state.clock.elapsedTime * 0.5) * 0.02;
+      pointsRef.current.position.z = Math.sin(timeRef.current * 0.5) * 0.02;
     }
   });
 

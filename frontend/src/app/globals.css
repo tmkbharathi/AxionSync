@@ -13,7 +13,28 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
+    cursor: none;
   }
+
+  /* Deep reset for focus rings to ensure a clean premium look */
+  *:focus, 
+  *:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+}
+
+html {
+  cursor: none;
+}
+
+/* Force hide cursor on interactive elements to prevent flickering, but allow text cursor for inputs */
+a, button, [role="button"] {
+  cursor: none !important;
+}
+
+input, textarea {
+  cursor: text;
 }
 
 @layer utilities {

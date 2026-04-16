@@ -232,6 +232,22 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     };
   }, [sessionId, SOCKET_URL, API_URL]);
 
+  // Handle Escape key to close modals
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowQr(false);
+        setShowDevicesModal(false);
+        // Remove focus to prevent accessibility rings from showing
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const handleActivateSession = async () => {
     setIsActivating(true);
     try {

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-inter), "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-sans: var(--font-outfit), "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 }
 
 :root {
@@ -10,10 +10,12 @@
 }
 
 @layer base {
-  body {
-    background-color: var(--background);
-    color: var(--foreground);
-    cursor: none;
+  @media (any-pointer: fine) {
+    body {
+      background-color: var(--background);
+      color: var(--foreground);
+      cursor: none;
+    }
   }
 
   /* Deep reset for focus rings to ensure a clean premium look */
@@ -24,31 +26,40 @@
   }
 }
 
-html {
-  cursor: none;
+@media (any-pointer: fine) {
+  html {
+    cursor: none;
+  }
+
+  /* Force hide cursor on interactive elements to prevent flickering, but allow text cursor for inputs */
+  a, button, [role="button"] {
+    cursor: none !important;
+  }
+
+  input, textarea {
+    cursor: text;
+  }
 }
 
-/* Force hide cursor on interactive elements to prevent flickering, but allow text cursor for inputs */
-a, button, [role="button"] {
-  cursor: none !important;
-}
+  /* Premium Global Dark Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #020617; /* Root slate-950 */
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e293b; /* slate-800 */
+    border-radius: 20px;
+    border: 2px solid #020617;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #334155; /* slate-700 */
+  }
 
-input, textarea {
-  cursor: text;
-}
-
-@layer utilities {
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
+  /* Firefox Support */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #1e293b #020617;
   }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.2);
-    border-radius: 10px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(148, 163, 184, 0.4);
-  }
-}

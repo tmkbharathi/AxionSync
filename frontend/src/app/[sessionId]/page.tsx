@@ -1,19 +1,22 @@
 "use client";
 
-import { useEffect, useState, useRef, use } from "react";
+import { useEffect, useState, useRef, use, memo } from "react";
 import { io, Socket } from "socket.io-client";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
+import { useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
+import { v4 as uuidv4 } from "uuid";
 import { 
   Copy, CheckCircle, UploadCloud, Cloud, X, Download, Trash2, Link, 
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
   Info, Monitor, Tablet, Globe,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
-  ChevronsRight, ChevronsLeft
+  ChevronsRight, ChevronsLeft, AlertTriangle
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
+import { Background3D } from "@/components/Background3D";
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -73,8 +76,197 @@ const getDeviceInfo = (): DeviceInfo => {
   return { name, platform, browser };
 };
 
+const getPersistentDeviceId = (): string => {
+  if (typeof window === "undefined") return "unknown";
+  const key = `${siteConfig.slug}:device_id`;
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = uuidv4();
+    localStorage.setItem(key, id);
+  }
+  return id;
+};
+
+// Memoized File Item for performance
+const FileItem = memo(({ 
+  file, 
+  handleDownload, 
+  handleDelete 
+}: { 
+  file: FileMeta, 
+  handleDownload: (f: FileMeta) => void, 
+  handleDelete: (f: FileMeta) => void 
+}) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="bg-slate-800/40 border border-slate-700/50 p-3 rounded-xl flex items-center justify-between group hover:bg-slate-800/80 transition-colors"
+    >
+      <div className="flex items-center gap-3 overflow-hidden pr-3">
+        {file.previewUrl ? (
+          <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 shrink-0">
+             <img src={file.previewUrl} alt={file.name} className="w-full h-full object-cover" />
+          </div>
+        ) : (
+          <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
+             <Globe className="w-5 h-5" />
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-200 truncate" title={file.name}>{file.name}</p>
+          <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+            <span>{formatSize(file.size)}</span>
+            <span>•</span>
+            <span>{formatDistanceToNow(new Date(file.uploadedAt), { addSuffix: true })}</span>
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+        <button 
+          onClick={() => handleDownload(file)}
+          className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
+          title="Download"
+        >
+          <Download className="w-4 h-4" />
+        </button>
+        <button 
+          onClick={() => handleDelete(file)}
+          className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 rounded-md transition-colors"
+          title="Delete"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </motion.div>
+  );
+});
+
+// Memoized Device Item for performance
+const DeviceItem = memo(({ 
+  device, 
+  isCurrent 
+}: { 
+  device: ActiveDevice, 
+  isCurrent: boolean 
+}) => {
+  return (
+    <div className="flex items-center gap-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
+      <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-blue-400 border border-slate-700">
+        {device.info.platform === 'mobile' ? <Smartphone className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-bold truncate">{isCurrent ? "This Device" : device.info.name}</p>
+          {isCurrent && (
+             <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded uppercase">You</span>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">{device.info.browser} • {device.info.platform}</p>
+      </div>
+    </div>
+  );
+});
+
+// Memoized Header for performance
+const SessionHeader = memo(({ 
+  connected, 
+  roomSize, 
+  sessionId, 
+  setShowDevicesModal, 
+  setShowQr, 
+  handleCopyLink, 
+  copiedLink,
+  handleDeleteSession
+}: { 
+  connected: boolean, 
+  roomSize: number, 
+  sessionId: string, 
+  setShowDevicesModal: (v: boolean) => void, 
+  setShowQr: (v: boolean) => void, 
+  handleCopyLink: () => void, 
+  copiedLink: boolean,
+  handleDeleteSession: () => void
+}) => {
+  return (
+    <header className="flex items-center justify-between px-6 py-4 border-b border-slate-800/60 bg-slate-900/40 backdrop-blur-md z-10">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <Smartphone className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="font-bold text-lg hidden sm:block">Devices</h1>
+          </div>
+          <div className="text-xs text-slate-400 flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
+            <div className="flex items-center gap-1.5">
+              <span>{connected ? `${roomSize} Connected` : 'System Online'}</span>
+              {connected && (
+                <button 
+                  onClick={() => setShowDevicesModal(true)}
+                  className="p-0.5 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-blue-400"
+                  title="View Device List"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
+        <button 
+          onClick={() => setShowQr(true)}
+          className="p-2 hover:bg-slate-700 rounded-md transition-colors text-slate-300 hover:text-white"
+          title="Show QR Code"
+        >
+          <QrCode className="w-4 h-4" />
+        </button>
+        
+        <div className="h-4 w-px bg-slate-700" />
+        
+        <div className="flex items-center gap-2 px-2 text-sm font-mono text-slate-300">
+          {sessionId}
+          <button 
+            onClick={handleCopyLink}
+            className={`p-1.5 rounded transition-all ${copiedLink ? 'text-emerald-400 bg-emerald-400/10' : 'text-slate-500 hover:text-blue-400 hover:bg-blue-400/10'}`}
+          >
+            {copiedLink ? <CheckCircle className="w-3.5 h-3.5" /> : <Link className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        <div className="h-4 w-px bg-slate-700" />
+        
+        <button 
+          onClick={handleDeleteSession}
+          className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-md transition-colors flex items-center gap-2"
+          title="Delete Session"
+        >
+          <Trash2 className="w-4 h-4" />
+          <span className="hidden sm:inline text-xs font-medium">Delete</span>
+        </button>
+      </div>
+    </header>
+  );
+});
+
+// Memoized Footer for performance
+const SessionFooter = memo(() => {
+  return (
+    <footer className="text-[10px] md:text-xs text-slate-500 text-center py-2 bg-slate-950 z-10 border-t border-slate-900 flex justify-center items-center gap-4">
+      <span>Data auto-destructs after 12 hours of inactivity.</span>
+      <span className="text-slate-700">|</span>
+      <span className="font-medium text-slate-600">Beta v{siteConfig.version}</span>
+    </footer>
+  );
+});
+
 export default function SessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = use(params);
+  const router = useRouter();
   
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
@@ -100,12 +292,14 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
   const [activeDevices, setActiveDevices] = useState<ActiveDevice[]>([]);
   const [showDevicesModal, setShowDevicesModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isFilePanelCollapsed, setIsFilePanelCollapsed] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef(text);
   const recognitionRef = useRef<any>(null);
   const hasAutoAttempted = useRef(false);
+  const isLocalChange = useRef(false); // To prevent sync loops and distinguish local typing
 
   useEffect(() => {
     // Check localStorage cache first for fast offline load
@@ -154,16 +348,20 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       setConnected(true);
       newSocket.emit("join_session", { 
         sessionId, 
-        deviceInfo: getDeviceInfo() 
+        deviceInfo: getDeviceInfo(),
+        persistentDeviceId: getPersistentDeviceId()
       });
     });
 
     newSocket.on("disconnect", () => setConnected(false));
 
     newSocket.on("text_updated", ({ content }: { content: string }) => {
-      setText(content);
-      textRef.current = content;
-      localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, content);
+      if (content !== textRef.current) {
+        isLocalChange.current = false; // Mark as remote update
+        setText(content);
+        textRef.current = content;
+        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, content);
+      }
     });
 
     newSocket.on("file_uploaded", (file: FileMeta) => {
@@ -189,6 +387,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       setFiles((prev) => prev.filter((f) => f.id !== fileId));
     });
 
+    newSocket.on("session_deleted", () => {
+      localStorage.removeItem(`${siteConfig.slug}:text:${sessionId}`);
+      router.push("/?status=deleted&origin=other");
+    });
+
     // Setup recognition
     if (typeof window !== "undefined" && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
       const SpeechReg = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -204,13 +407,10 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           }
         }
         if (finalTranscript) {
+          isLocalChange.current = true;
           setText((prev) => {
              const updated = prev + (prev.endsWith(' ') || prev.length===0 ? '' : ' ') + finalTranscript;
              textRef.current = updated;
-             localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, updated);
-             if (newSocket && newSocket.connected) {
-               newSocket.emit("update_text", { sessionId, content: updated });
-             }
              return updated;
           });
         }
@@ -260,16 +460,26 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   };
 
+  // Debounced Sync Effect
+  useEffect(() => {
+    if (!isLocalChange.current) return;
+
+    const timer = setTimeout(() => {
+      if (socket && connected) {
+        socket.emit("update_text", { sessionId, content: text });
+        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, text);
+      }
+      isLocalChange.current = false;
+    }, 1000); // 1 second debounce for optimal performance
+
+    return () => clearTimeout(timer);
+  }, [text, socket, connected, sessionId]);
+
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
+    isLocalChange.current = true; // Mark as local typing
     setText(newText);
     textRef.current = newText;
-    localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, newText);
-    
-    // Broadcast via socket
-    if (socket && connected) {
-      socket.emit("update_text", { sessionId, content: newText });
-    }
   };
 
 
@@ -380,6 +590,28 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   };
 
+  const handleDeleteSession = async () => {
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteSession = async () => {
+    setShowDeleteModal(false);
+    
+    // Debug logging
+    console.log("[DEBUG] API_URL:", API_URL);
+    console.log("[DEBUG] sessionId:", sessionId);
+    const deleteUrl = `${API_URL}/session/${sessionId}`;
+    console.log("[DEBUG] Attempting to delete session at:", deleteUrl);
+    
+    try {
+      await axios.delete(deleteUrl);
+      router.push("/?status=deleted&origin=self");
+    } catch (err) {
+      console.error("Failed to delete session", err);
+      alert("Failed to delete session. Please try again.");
+    }
+  };
+
   const formatSize = (bytes: number) => {
     if (bytes === 0) return "0 B";
     const k = 1024;
@@ -467,62 +699,21 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative selection:bg-blue-500/30">
       
+      
       {/* Background Decor */}
       <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px] pointer-events-none -translate-x-1/2 -translate-y-1/2" />
       <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none translate-x-1/3 translate-y-1/3" />
 
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-slate-800/60 bg-slate-900/40 backdrop-blur-md z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Smartphone className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-bold text-lg hidden sm:block">Devices</h1>
-            </div>
-            <div className="text-xs text-slate-400 flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
-              <div className="flex items-center gap-1.5">
-                <span>{connected ? `${roomSize} Connected` : 'System Online'}</span>
-                {connected && (
-                  <button 
-                    onClick={() => setShowDevicesModal(true)}
-                    className="p-0.5 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-blue-400"
-                    title="View Device List"
-                  >
-                    <Info className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
-          <button 
-            onClick={() => setShowQr(true)}
-            className="p-2 hover:bg-slate-700 rounded-md transition-colors text-slate-300 hover:text-white"
-            title="Show QR Code"
-          >
-            <QrCode className="w-4 h-4" />
-          </button>
-          
-          <div className="h-4 w-px bg-slate-700" />
-          
-          <div className="flex items-center gap-2 px-2 text-sm font-mono text-slate-300">
-            {sessionId}
-          </div>
-          
-          <button 
-            onClick={handleCopyLink}
-            className="p-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-md transition-colors flex items-center gap-2"
-          >
-            {copiedLink ? <CheckCircle className="w-4 h-4" /> : <Link className="w-4 h-4" />}
-            <span className="hidden sm:inline text-xs font-medium">{copiedLink ? 'Copied' : 'Share'}</span>
-          </button>
-        </div>
-      </header>
+      <SessionHeader 
+        connected={connected}
+        roomSize={roomSize}
+        sessionId={sessionId}
+        setShowDevicesModal={setShowDevicesModal}
+        setShowQr={setShowQr}
+        handleCopyLink={handleCopyLink}
+        copiedLink={copiedLink}
+        handleDeleteSession={handleDeleteSession}
+      />
 
       {/* Mobile Tabs */}
       <div className="md:hidden flex p-2 bg-slate-900/40 border-b border-slate-800/60 z-10">
@@ -646,49 +837,12 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
               <div className="space-y-3">
                 <AnimatePresence>
                   {files.map((f) => (
-                    <motion.div
-                      key={f.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      className="bg-slate-800/40 border border-slate-700/50 p-3 rounded-xl flex items-center justify-between group hover:bg-slate-800/80 transition-colors"
-                    >
-                      <div className="flex items-center gap-3 overflow-hidden pr-3">
-                        {f.previewUrl ? (
-                          <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 shrink-0">
-                             <img src={f.previewUrl} alt={f.name} className="w-full h-full object-cover" />
-                          </div>
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
-                             <Globe className="w-5 h-5" />
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-200 truncate" title={f.name}>{f.name}</p>
-                          <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                            <span>{formatSize(f.size)}</span>
-                            <span>•</span>
-                            <span>{formatDistanceToNow(new Date(f.uploadedAt), { addSuffix: true })}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => handleDownloadFile(f)}
-                          className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
-                          title="Download"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteFile(f)}
-                          className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 rounded-md transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </motion.div>
+                    <FileItem 
+                      key={f.id} 
+                      file={f} 
+                      handleDownload={handleDownloadFile} 
+                      handleDelete={handleDeleteFile} 
+                    />
                   ))}
                 </AnimatePresence>
               </div>
@@ -698,12 +852,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
       </main>
 
-      {/* Footer */}
-      <footer className="text-[10px] md:text-xs text-slate-500 text-center py-2 bg-slate-950 z-10 border-t border-slate-900 flex justify-center items-center gap-4">
-        <span>Data auto-destructs after 12 hours of inactivity.</span>
-        <span className="text-slate-700">|</span>
-        <span className="font-medium text-slate-600">Beta v{siteConfig.version}</span>
-      </footer>
+      <SessionFooter />
 
       {/* Device Info Modal */}
       <AnimatePresence>
@@ -737,20 +886,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
               <div className="space-y-3">
                 {activeDevices.map((device) => (
-                  <div key={device.id} className="flex items-center gap-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
-                    <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-blue-400 border border-slate-700">
-                      {device.info.platform === 'mobile' ? <Smartphone className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold truncate">{device.id === socket?.id ? "This Device" : device.info.name}</p>
-                        {device.id === socket?.id && (
-                           <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded uppercase">You</span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">{device.info.browser} • {device.info.platform}</p>
-                    </div>
-                  </div>
+                  <DeviceItem 
+                    key={device.id} 
+                    device={device} 
+                    isCurrent={device.id === socket?.id} 
+                  />
                 ))}
               </div>
               
@@ -800,6 +940,54 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         )}
       </AnimatePresence>
 
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDeleteModal(false)}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-8">
+                <div className="w-16 h-16 bg-rose-500/10 rounded-2xl flex items-center justify-center mb-6 border border-rose-500/20">
+                  <AlertTriangle className="w-8 h-8 text-rose-500" />
+                </div>
+                
+                <h3 className="text-2xl font-bold text-white mb-3">Delete Everything?</h3>
+                <p className="text-slate-400 mb-8 leading-relaxed">
+                  This will instantly wipe all shared text and files for <span className="text-rose-400 font-semibold">everyone</span> in this room. This action cannot be undone.
+                </p>
+                
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={confirmDeleteSession}
+                    className="w-full py-4 px-6 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-2xl transition-all shadow-lg shadow-rose-500/20 active:scale-[0.98] flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                    Delete Everything
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowDeleteModal(false)}
+                    className="w-full py-4 px-6 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-2xl transition-all active:scale-[0.98]"
+                  >
+                    Keep Session
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

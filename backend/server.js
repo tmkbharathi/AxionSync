@@ -7,6 +7,8 @@ const multer = require("multer");
 const Redis = require("ioredis");
 const cron = require("node-cron");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
@@ -32,8 +34,18 @@ redis.on("error", (error) => {
   console.error("Redis connection error:", error);
 });
 
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+app.use(cors({ 
+  origin: FRONTEND_URL, 
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+  credentials: true 
+}));
 app.use(express.json());
+
+// Global Request Logger
+app.use((req, res, next) => {
+  console.log(`[DEBUG] ${new Date().toISOString()} ${req.method} ${req.url}`);
+  next();
+});
 
 const io = new Server(server, {
   cors: { origin: FRONTEND_URL, methods: ["GET", "POST"] },
@@ -49,17 +61,123 @@ const s3 = new S3Client({
   forcePathStyle: true, // Required for many S3-compatible providers like Supabase
 });
 
+// Configure disk storage for performance (prevents RAM exhaustion)
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: storage,
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
 
 // --- API ROUTES ---
 
+// Root route for connection test
+app.get("/", (req, res) => {
+  res.json({ status: "alive", message: "AxionSync API is running" });
+});
+
 // Health check for Render
 app.get("/health", (req, res) => res.send("OK"));
 
+// Session Routes (Moved to top priority)
+app.route("/session/:sessionId")
+  .get(async (req, res) => {
+    const { sessionId } = req.params;
+    try {
+      const activeKey = `session:${sessionId}:active`;
+      const textKey = `session:${sessionId}:text`;
+      const filesKey = `session:${sessionId}:files`;
+
+      const [isActive, text, filesCount] = await Promise.all([
+        redis.exists(activeKey),
+        redis.get(textKey),
+        redis.llen(filesKey)
+      ]);
+
+      if (!isActive && text === null && filesCount === 0) {
+        return res.status(404).json({ error: "Session not found or expired" });
+      }
+
+      const filesRaw = await redis.lrange(filesKey, 0, -1);
+      const files = await Promise.all(
+        filesRaw.map(async (f) => {
+          const file = JSON.parse(f);
+          // Add signed preview URL for images
+          if (file.mimeType && file.mimeType.startsWith("image/")) {
+            try {
+              const command = new GetObjectCommand({
+                Bucket: S3_BUCKET_NAME,
+                Key: file.s3Key,
+              });
+              file.previewUrl = await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1 hr expiry
+            } catch (err) {
+              console.error("Preview URL generation failed", err);
+            }
+          }
+          return file;
+        })
+      );
+
+      // Refresh active status if it was about to expire but data still exists
+      if (!isActive) {
+        await redis.set(activeKey, "1", "EX", 43200);
+      }
+
+      res.json({ text: text || "", files });
+    } catch (e) {
+      console.error("Session load error:", e);
+      res.status(500).json({ error: "Failed to load session" });
+    }
+  })
+  .delete(async (req, res) => {
+    const { sessionId } = req.params;
+    console.log(`[API] DELETE request received for session: ${sessionId}`);
+    try {
+      const activeKey = `session:${sessionId}:active`;
+      const textKey = `session:${sessionId}:text`;
+      const filesKey = `session:${sessionId}:files`;
+
+      // 1. Get all files to delete from S3
+      const filesRaw = await redis.lrange(filesKey, 0, -1);
+      const files = filesRaw.map(f => JSON.parse(f));
+
+      for (const file of files) {
+        try {
+          await s3.send(new DeleteObjectCommand({
+            Bucket: S3_BUCKET_NAME,
+            Key: file.s3Key
+          }));
+        } catch (err) {
+          console.error(`Failed to delete file ${file.s3Key} from S3:`, err);
+        }
+      }
+
+      // 2. Delete all keys from Redis
+      await redis.del(activeKey, textKey, filesKey);
+
+      // 3. Notify all clients in the session
+      io.to(sessionId).emit("session_deleted");
+
+      res.json({ success: true });
+    } catch (e) {
+      console.error(`Failed to delete session ${sessionId}:`, e);
+      res.status(500).json({ error: "Failed to delete session" });
+    }
+  });
+
 // Upload file to R2 through backend
+// ...
 app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
   const { sessionId } = req.params;
   const file = req.file;
@@ -72,29 +190,37 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
     // 1. Limit total files per session (max 20)
     const currentFilesCount = await redis.llen(filesKey);
     if (currentFilesCount >= 20) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path); // Clean up temp file
       return res.status(400).json({ error: "Session file limit (20) reached. Please delete old files." });
     }
 
-    // 2. Hash check for duplicate uploads in the same session
-    const fileHash = crypto.createHash("sha256").update(file.buffer).digest("hex");
+    // 2. Hash check for duplicate uploads (Calculate from disk)
+    const fileBuffer = fs.readFileSync(file.path);
+    const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+    
     const existingFilesRaw = await redis.lrange(filesKey, 0, -1);
     const existingFiles = existingFilesRaw.map(f => JSON.parse(f));
 
     if (existingFiles.some(f => f.hash === fileHash)) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path); // Clean up temp file
       return res.status(409).json({ error: "File already uploaded in this session." });
     }
 
     const fileId = `${Date.now()}-${file.originalname}`;
     const s3Key = `${sessionId}/${fileId}`;
 
-    // Upload to R2
+    // 3. Upload to R2 from disk stream (Better performance)
     const uploadCommand = new PutObjectCommand({
       Bucket: S3_BUCKET_NAME,
       Key: s3Key,
-      Body: file.buffer,
+      Body: fs.createReadStream(file.path),
       ContentType: file.mimetype,
+      ContentLength: file.size,
     });
     await s3.send(uploadCommand);
+
+    // 4. Cleanup local temp file immediately after upload
+    fs.unlinkSync(file.path);
 
     const fileMeta = {
       id: fileId,
@@ -122,6 +248,9 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
     res.json(fileMeta);
   } catch (error) {
     console.error("Upload error:", error);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path); // Ensure cleanup on error
+    }
     res.status(500).json({ error: "Upload failed" });
   }
 });
@@ -156,60 +285,24 @@ app.post("/session/:sessionId/init", async (req, res) => {
   }
 });
 
-app.get("/session/:sessionId", async (req, res) => {
-  const { sessionId } = req.params;
-  try {
-    const activeKey = `session:${sessionId}:active`;
-    const textKey = `session:${sessionId}:text`;
-    const filesKey = `session:${sessionId}:files`;
-
-    // A session is valid if it's explicitly active OR has data
-    const isActive = await redis.exists(activeKey);
-    const text = await redis.get(textKey);
-    const filesCount = await redis.llen(filesKey);
-
-    if (!isActive && text === null && filesCount === 0) {
-      return res.status(404).json({ error: "Session not found or expired" });
-    }
-
-    const filesRaw = await redis.lrange(filesKey, 0, -1);
-    const files = await Promise.all(
-      filesRaw.map(async (f) => {
-        const file = JSON.parse(f);
-        // Add signed preview URL for images
-        if (file.mimeType && file.mimeType.startsWith("image/")) {
-          try {
-            const command = new GetObjectCommand({
-              Bucket: S3_BUCKET_NAME,
-              Key: file.s3Key,
-            });
-            file.previewUrl = await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1 hr expiry
-          } catch (err) {
-            console.error("Preview URL generation failed", err);
-          }
-        }
-        return file;
-      })
-    );
-
-    // Refresh active status if it was about to expire but data still exists
-    if (!isActive) {
-      await redis.set(activeKey, "1", "EX", 43200);
-    }
-
-    res.json({ text: text || "", files });
-  } catch (e) {
-    console.error("Session load error:", e);
-    res.status(500).json({ error: "Failed to load session" });
-  }
+app.use((req, res) => {
+  console.log(`[404] No route found for: ${req.method} ${req.url}`);
+  res.status(404).json({ 
+    error: "Not Found", 
+    method: req.method, 
+    path: req.url,
+    suggestion: "Is there a trailing slash mismatch?"
+  });
 });
+
 
 // --- WEBSOCKETS ---
 
 io.on("connection", (socket) => {
-  socket.on("join_session", async ({ sessionId, deviceInfo }) => {
+  socket.on("join_session", async ({ sessionId, deviceInfo, persistentDeviceId }) => {
     socket.join(sessionId);
     socket.sessionId = sessionId; // Store for disconnect handling
+    socket.persistentDeviceId = persistentDeviceId;
     socket.deviceInfo = deviceInfo || { name: "Unknown Device", platform: "unknown", browser: "unknown" };
 
     // Refresh overall session expiry on join
@@ -223,11 +316,19 @@ io.on("connection", (socket) => {
 
     // Broadcast updated device list to all in room
     const sockets = await io.in(sessionId).fetchSockets();
-    const devices = sockets.map(s => ({
-      id: s.id,
-      info: s.deviceInfo
-    }));
+    const uniqueDevicesMap = new Map();
     
+    sockets.forEach(s => {
+      const devId = s.persistentDeviceId || s.id;
+      if (!uniqueDevicesMap.has(devId)) {
+        uniqueDevicesMap.set(devId, {
+          id: s.id,
+          info: s.deviceInfo
+        });
+      }
+    });
+
+    const devices = Array.from(uniqueDevicesMap.values());
     io.to(sessionId).emit("room_devices", devices);
     io.to(sessionId).emit("room_size", devices.length);
   });
@@ -273,10 +374,19 @@ io.on("connection", (socket) => {
   socket.on("disconnect", async () => {
     if (socket.sessionId) {
       const sockets = await io.in(socket.sessionId).fetchSockets();
-      const devices = sockets.map(s => ({
-        id: s.id,
-        info: s.deviceInfo
-      }));
+      const uniqueDevicesMap = new Map();
+      
+      sockets.forEach(s => {
+        const devId = s.persistentDeviceId || s.id;
+        if (!uniqueDevicesMap.has(devId)) {
+          uniqueDevicesMap.set(devId, {
+            id: s.id,
+            info: s.deviceInfo
+          });
+        }
+      });
+
+      const devices = Array.from(uniqueDevicesMap.values());
       io.to(socket.sessionId).emit("room_devices", devices);
       io.to(socket.sessionId).emit("room_size", devices.length);
     }

@@ -10,10 +10,12 @@
 }
 
 @layer base {
-  body {
-    background-color: var(--background);
-    color: var(--foreground);
-    cursor: none;
+  @media (pointer: fine) {
+    body {
+      background-color: var(--background);
+      color: var(--foreground);
+      cursor: none;
+    }
   }
 
   /* Deep reset for focus rings to ensure a clean premium look */
@@ -24,17 +26,19 @@
   }
 }
 
-html {
-  cursor: none;
-}
+@media (pointer: fine) {
+  html {
+    cursor: none;
+  }
 
-/* Force hide cursor on interactive elements to prevent flickering, but allow text cursor for inputs */
-a, button, [role="button"] {
-  cursor: none !important;
-}
+  /* Force hide cursor on interactive elements to prevent flickering, but allow text cursor for inputs */
+  a, button, [role="button"] {
+    cursor: none !important;
+  }
 
-input, textarea {
-  cursor: text;
+  input, textarea {
+    cursor: text;
+  }
 }
 
 @layer utilities {

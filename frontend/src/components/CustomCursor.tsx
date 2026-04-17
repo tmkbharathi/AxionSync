@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { motion, useSpring, useMotionValue } from "framer-motion";
 
 export default function CustomCursor() {
+  const [hasFinePointer, setHasFinePointer] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isHoveringInput, setIsHoveringInput] = useState(false);
@@ -19,8 +20,20 @@ export default function CustomCursor() {
   // Even smoother springs for the inner dot to make it "follow" gracefully
   const dotX = useSpring(mouseX, { damping: 40, stiffness: 150 });
   const dotY = useSpring(mouseY, { damping: 40, stiffness: 150 });
+  useEffect(() => {
+    // Detect if the device has a fine pointer (mouse/trackpad)
+    const mq = window.matchMedia("(pointer: fine)");
+    setHasFinePointer(mq.matches);
+
+    const handler = (e: MediaQueryListEvent) => setHasFinePointer(e.matches);
+    mq.addEventListener("change", handler);
+
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   useEffect(() => {
+    if (!hasFinePointer) return;
+
     const moveMouse = (e: MouseEvent) => {
       mouseX.set(e.clientX);
       mouseY.set(e.clientY);
@@ -74,7 +87,7 @@ export default function CustomCursor() {
     setMounted(true);
   }, []);
 
-  if (!mounted) return null;
+  if (!mounted || !hasFinePointer) return null;
 
   return (
     <>

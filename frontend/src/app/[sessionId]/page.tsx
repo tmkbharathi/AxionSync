@@ -121,6 +121,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const textRef = useRef(text);
   const recognitionRef = useRef<any>(null);
   const hasAutoAttempted = useRef(false);
+  const isLocalChange = useRef(false); // To prevent sync loops and distinguish local typing
 
   useEffect(() => {
     // Check localStorage cache first for fast offline load
@@ -177,9 +178,12 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     newSocket.on("disconnect", () => setConnected(false));
 
     newSocket.on("text_updated", ({ content }: { content: string }) => {
-      setText(content);
-      textRef.current = content;
-      localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, content);
+      if (content !== textRef.current) {
+        isLocalChange.current = false; // Mark as remote update
+        setText(content);
+        textRef.current = content;
+        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, content);
+      }
     });
 
     newSocket.on("file_uploaded", (file: FileMeta) => {
@@ -225,13 +229,10 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           }
         }
         if (finalTranscript) {
+          isLocalChange.current = true;
           setText((prev) => {
              const updated = prev + (prev.endsWith(' ') || prev.length===0 ? '' : ' ') + finalTranscript;
              textRef.current = updated;
-             localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, updated);
-             if (newSocket && newSocket.connected) {
-               newSocket.emit("update_text", { sessionId, content: updated });
-             }
              return updated;
           });
         }
@@ -281,16 +282,26 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   };
 
+  // Debounced Sync Effect
+  useEffect(() => {
+    if (!isLocalChange.current) return;
+
+    const timer = setTimeout(() => {
+      if (socket && connected) {
+        socket.emit("update_text", { sessionId, content: text });
+        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, text);
+      }
+      isLocalChange.current = false;
+    }, 1000); // 1 second debounce for optimal performance
+
+    return () => clearTimeout(timer);
+  }, [text, socket, connected, sessionId]);
+
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
+    isLocalChange.current = true; // Mark as local typing
     setText(newText);
     textRef.current = newText;
-    localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, newText);
-    
-    // Broadcast via socket
-    if (socket && connected) {
-      socket.emit("update_text", { sessionId, content: newText });
-    }
   };
 
 

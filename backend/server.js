@@ -7,6 +7,8 @@ const multer = require("multer");
 const Redis = require("ioredis");
 const cron = require("node-cron");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
@@ -59,8 +61,22 @@ const s3 = new S3Client({
   forcePathStyle: true, // Required for many S3-compatible providers like Supabase
 });
 
+// Configure disk storage for performance (prevents RAM exhaustion)
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: storage,
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
 
@@ -83,10 +99,11 @@ app.route("/session/:sessionId")
       const textKey = `session:${sessionId}:text`;
       const filesKey = `session:${sessionId}:files`;
 
-      // A session is valid if it's explicitly active OR has data
-      const isActive = await redis.exists(activeKey);
-      const text = await redis.get(textKey);
-      const filesCount = await redis.llen(filesKey);
+      const [isActive, text, filesCount] = await Promise.all([
+        redis.exists(activeKey),
+        redis.get(textKey),
+        redis.llen(filesKey)
+      ]);
 
       if (!isActive && text === null && filesCount === 0) {
         return res.status(404).json({ error: "Session not found or expired" });
@@ -173,29 +190,37 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
     // 1. Limit total files per session (max 20)
     const currentFilesCount = await redis.llen(filesKey);
     if (currentFilesCount >= 20) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path); // Clean up temp file
       return res.status(400).json({ error: "Session file limit (20) reached. Please delete old files." });
     }
 
-    // 2. Hash check for duplicate uploads in the same session
-    const fileHash = crypto.createHash("sha256").update(file.buffer).digest("hex");
+    // 2. Hash check for duplicate uploads (Calculate from disk)
+    const fileBuffer = fs.readFileSync(file.path);
+    const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+    
     const existingFilesRaw = await redis.lrange(filesKey, 0, -1);
     const existingFiles = existingFilesRaw.map(f => JSON.parse(f));
 
     if (existingFiles.some(f => f.hash === fileHash)) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path); // Clean up temp file
       return res.status(409).json({ error: "File already uploaded in this session." });
     }
 
     const fileId = `${Date.now()}-${file.originalname}`;
     const s3Key = `${sessionId}/${fileId}`;
 
-    // Upload to R2
+    // 3. Upload to R2 from disk stream (Better performance)
     const uploadCommand = new PutObjectCommand({
       Bucket: S3_BUCKET_NAME,
       Key: s3Key,
-      Body: file.buffer,
+      Body: fs.createReadStream(file.path),
       ContentType: file.mimetype,
+      ContentLength: file.size,
     });
     await s3.send(uploadCommand);
+
+    // 4. Cleanup local temp file immediately after upload
+    fs.unlinkSync(file.path);
 
     const fileMeta = {
       id: fileId,
@@ -223,6 +248,9 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
     res.json(fileMeta);
   } catch (error) {
     console.error("Upload error:", error);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path); // Ensure cleanup on error
+    }
     res.status(500).json({ error: "Upload failed" });
   }
 });

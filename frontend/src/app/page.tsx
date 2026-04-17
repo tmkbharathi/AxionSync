@@ -48,6 +48,9 @@ function StarBackground(props: any) {
   }, []);
 
   useFrame((state, delta) => {
+    // Optimization: Skip calculations if the tab is hidden
+    if (typeof document !== "undefined" && document.hidden) return;
+
     timeRef.current += delta;
 
     // 1. Continuous slow drift
@@ -222,7 +225,7 @@ function Home() {
           <FeatureCard 
             icon={<Copy className="w-6 h-6 text-cyan-400" />}
             title="Real-time Clipboard"
-            desc="Copy text on your phone, paste it on your laptop instantly."
+            desc="Copy on one device, paste on any other—instantly and in real-time."
           />
           <FeatureCard 
             icon={<Cloud className="w-6 h-6 text-blue-400" />}

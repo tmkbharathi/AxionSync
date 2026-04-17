@@ -6,96 +6,16 @@ import { Suspense } from "react";
 import { Copy, ArrowRight, Cloud, Shield, Zap, CheckCircle2, Heart } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo, useEffect, memo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
 import * as THREE from "three";
 import { siteConfig } from "@/config/site";
+import { Background3D } from "@/components/Background3D";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-// Animated Particle Background using Three.js
-function StarBackground(props: any) {
-  const groupRef = useRef<any>(null);
-  const pointsRef = useRef<any>(null);
-  const pointer = useRef({ x: 0, y: 0 });
-  const timeRef = useRef(0);
-
-  useEffect(() => {
-    const handlePointerMove = (e: PointerEvent) => {
-      pointer.current.x = (e.clientX / window.innerWidth) * 2 - 1;
-      pointer.current.y = -(e.clientY / window.innerHeight) * 2 + 1;
-    };
-    window.addEventListener("pointermove", handlePointerMove);
-    return () => window.removeEventListener("pointermove", handlePointerMove);
-  }, []);
-
-  const sphere = useMemo(() => {
-    // Generate 5000 random points within a sphere of radius 1.2
-    const positions = new Float32Array(5000 * 3);
-    for (let i = 0; i < 5000; i++) {
-      const u = Math.random();
-      const v = Math.random();
-      const theta = 2 * Math.PI * u;
-      const phi = Math.acos(2 * v - 1);
-      const r = Math.cbrt(Math.random()) * 1.2;
-
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta); // x
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta); // y
-      positions[i * 3 + 2] = r * Math.cos(phi); // z
-    }
-    return positions;
-  }, []);
-
-  useFrame((state, delta) => {
-    // Optimization: Skip calculations if the tab is hidden
-    if (typeof document !== "undefined" && document.hidden) return;
-
-    timeRef.current += delta;
-
-    // 1. Continuous slow drift
-    if (groupRef.current) {
-      groupRef.current.rotation.x -= delta / 15;
-      groupRef.current.rotation.y -= delta / 20;
-    }
-
-    // 2. Interactive parallax and sway
-    if (pointsRef.current) {
-      // Target rotation (sway)
-      const targetRotX = pointer.current.y * 0.4;
-      const targetRotY = pointer.current.x * 0.4;
-
-      // Target position (parallax shift)
-      const targetPosX = pointer.current.x * 0.1;
-      const targetPosY = pointer.current.y * 0.1;
-
-      // Smooth interpolation for rotation
-      pointsRef.current.rotation.x += (targetRotX - pointsRef.current.rotation.x) * 0.05;
-      pointsRef.current.rotation.y += (targetRotY - pointsRef.current.rotation.y) * 0.05;
-
-      // Smooth interpolation for position (adds depth)
-      pointsRef.current.position.x += (targetPosX - pointsRef.current.position.x) * 0.03;
-      pointsRef.current.position.y += (targetPosY - pointsRef.current.position.y) * 0.03;
-
-      // Subtle float oscillation
-      pointsRef.current.position.z = Math.sin(timeRef.current * 0.5) * 0.02;
-    }
-  });
-
-  return (
-    <group ref={groupRef} rotation={[0, 0, Math.PI / 4]}>
-      <Points ref={pointsRef} positions={sphere} stride={3} frustumCulled {...props}>
-        <PointMaterial
-          transparent
-          color="#22d3ee"
-          size={0.002}
-          sizeAttenuation={true}
-          depthWrite={false}
-        />
-      </Points>
-    </group>
-  );
-}
+// 3D components removed (moved to shared components)
 
 function Home() {
   const router = useRouter();
@@ -164,16 +84,32 @@ function Home() {
   return (
     <div className="relative min-h-screen bg-slate-950 text-white overflow-hidden flex flex-col justify-center items-center">
 
-      {/* Modern Three.js Particle Container */}
-      <div className="fixed inset-0 pointer-events-none">
-        <Canvas
-          camera={{ position: [0, 0, 1] }}
-          dpr={[1, 2]}
-          clock={useMemo(() => new THREE.Timer() as unknown as THREE.Clock, [])}
+      {/* Top Right GitHub Link */}
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 0.6, x: 0 }}
+        whileHover={{ opacity: 1, scale: 1.05 }}
+        className="fixed top-6 right-8 z-50"
+      >
+        <a
+          href={siteConfig.links.github}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all border border-slate-800 hover:border-slate-700 bg-slate-900/40 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl group"
         >
-          <StarBackground />
-        </Canvas>
-      </div>
+          <svg
+            viewBox="0 0 24 24"
+            className="w-4 h-4 fill-current transition-transform group-hover:scale-110"
+            aria-hidden="true"
+          >
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+          </svg>
+          <span className="hidden sm:inline">Repository</span>
+        </a>
+      </motion.div>
+
+      {/* Modern Three.js Particle Container (Isolated for Performance) */}
+      <Background3D />
 
       <div className="relative z-10 w-full max-w-5xl px-6 py-6 lg:px-8 flex flex-col items-center">
 
@@ -372,7 +308,7 @@ export default function HomePage() {
   );
 }
 
-function FeatureCard({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) {
+const FeatureCard = memo(function FeatureCard({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) {
   return (
     <div className="bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl p-6 hover:bg-slate-800/50 transition-colors">
       <div className="bg-slate-800/80 w-12 h-12 rounded-lg flex items-center justify-center mb-4 border border-slate-700">
@@ -382,4 +318,4 @@ function FeatureCard({ icon, title, desc }: { icon: React.ReactNode, title: stri
       <p className="text-slate-400 text-sm leading-relaxed">{desc}</p>
     </div>
   );
-}
+});

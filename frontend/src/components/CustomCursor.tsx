@@ -21,8 +21,9 @@ export default function CustomCursor() {
   const dotX = useSpring(mouseX, { damping: 40, stiffness: 150 });
   const dotY = useSpring(mouseY, { damping: 40, stiffness: 150 });
   useEffect(() => {
-    // Detect if the device has a fine pointer (mouse/trackpad)
-    const mq = window.matchMedia("(pointer: fine)");
+    // Detect if the device has ANY fine pointer (mouse/trackpad)
+    // Using any-pointer: fine to support touchscreen laptops.
+    const mq = window.matchMedia("(any-pointer: fine)");
     setHasFinePointer(mq.matches);
 
     const handler = (e: MediaQueryListEvent) => setHasFinePointer(e.matches);
@@ -80,7 +81,7 @@ export default function CustomCursor() {
       document.removeEventListener("mouseleave", handleMouseLeave);
       document.removeEventListener("mouseenter", handleMouseEnter);
     };
-  }, [mouseX, mouseY, isVisible]);
+  }, [mouseX, mouseY, isVisible, hasFinePointer]);
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {

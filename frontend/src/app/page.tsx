@@ -1,13 +1,15 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { Copy, ArrowRight, Cloud, Shield, Zap } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import { Copy, ArrowRight, Cloud, Shield, Zap, CheckCircle2, Heart } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import { useState, useRef, useMemo, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
+import * as THREE from "three";
 import { siteConfig } from "@/config/site";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -92,10 +94,26 @@ function StarBackground(props: any) {
   );
 }
 
-export default function Home() {
+function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isGenerating, setIsGenerating] = useState(false);
   const [joinKey, setJoinKey] = useState("");
+  const [showThankYou, setShowThankYou] = useState(false);
+  const [isDeletedByOther, setIsDeletedByOther] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("status") === "deleted") {
+      setShowThankYou(true);
+      setIsDeletedByOther(searchParams.get("origin") === "other");
+      // Clean up the URL
+      window.history.replaceState({}, '', '/');
+      
+      // Auto-hide after some time
+      const timer = setTimeout(() => setShowThankYou(false), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [searchParams]);
 
   const handleStart = async () => {
     setIsGenerating(true);
@@ -123,12 +141,17 @@ export default function Home() {
 
   return (
     <div className="relative min-h-screen bg-slate-950 text-white overflow-hidden flex flex-col justify-center items-center">
-      {/* 3D Background */}
-      <div className="absolute inset-0 z-0">
-        <Canvas camera={{ position: [0, 0, 1] }}>
-          <StarBackground />
-        </Canvas>
-      </div>
+      
+        {/* Modern Three.js Particle Container */}
+        <div className="fixed inset-0 pointer-events-none">
+          <Canvas 
+            camera={{ position: [0, 0, 1] }} 
+            dpr={[1, 2]} 
+            clock={useMemo(() => new THREE.Timer() as unknown as THREE.Clock, [])}
+          >
+            <StarBackground />
+          </Canvas>
+        </div>
 
       <div className="relative z-10 w-full max-w-5xl px-6 py-12 lg:px-8 flex flex-col items-center">
         
@@ -214,7 +237,74 @@ export default function Home() {
         </motion.div>
 
       </div>
+
+      {/* Peaceful Thank You Overlay */}
+      <AnimatePresence>
+        {showThankYou && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-md"
+            onClick={() => setShowThankYou(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, y: 20, opacity: 0 }}
+              className="max-w-md w-full bg-slate-900/40 border border-blue-500/20 p-10 rounded-[2.5rem] text-center relative overflow-hidden group shadow-2xl shadow-blue-500/10"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Decorative Glow */}
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-40 bg-blue-500/20 rounded-full blur-[60px] pointer-events-none" />
+              
+              <motion.div
+                initial={{ rotate: -10, scale: 0.8 }}
+                animate={{ rotate: 0, scale: 1 }}
+                transition={{ type: "spring", damping: 12 }}
+                className="w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-xl shadow-blue-500/20"
+              >
+                <CheckCircle2 className="w-10 h-10 text-white" />
+              </motion.div>
+              
+              <h2 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+                {isDeletedByOther ? 'Session Ended' : 'Room Peacefully Closed'}
+              </h2>
+              
+              <p className="text-slate-300 text-lg mb-8 leading-relaxed italic font-medium pt-2 border-t border-slate-800">
+                "May your files find their home and your mind find its peace."
+              </p>
+              
+              <div className="flex flex-col gap-4">
+                <p className="text-slate-500 text-sm">
+                  {isDeletedByOther 
+                    ? "A participant has closed this room and securely wiped all shared data."
+                    : "The session has been completely wiped from our systems. Thank you for trusting AxionSync with your temporary workspace."}
+                </p>
+                
+                <button 
+                  onClick={() => setShowThankYou(false)}
+                  className="mt-4 px-8 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all border border-slate-700 hover:border-blue-500/30"
+                >
+                  Return to Home
+                </button>
+              </div>
+
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent" />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+// Wrap Home in Suspense because of useSearchParams
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950" />}>
+      <Home />
+    </Suspense>
   );
 }
 

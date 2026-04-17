@@ -4,13 +4,15 @@ import { useEffect, useState, useRef, use } from "react";
 import { io, Socket } from "socket.io-client";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
+import { useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
+import { v4 as uuidv4 } from "uuid";
 import { 
   Copy, CheckCircle, UploadCloud, Cloud, X, Download, Trash2, Link, 
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
   Info, Monitor, Tablet, Globe,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
-  ChevronsRight, ChevronsLeft
+  ChevronsRight, ChevronsLeft, AlertTriangle
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
@@ -73,8 +75,20 @@ const getDeviceInfo = (): DeviceInfo => {
   return { name, platform, browser };
 };
 
+const getPersistentDeviceId = (): string => {
+  if (typeof window === "undefined") return "unknown";
+  const key = `${siteConfig.slug}:device_id`;
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = uuidv4();
+    localStorage.setItem(key, id);
+  }
+  return id;
+};
+
 export default function SessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = use(params);
+  const router = useRouter();
   
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
@@ -100,6 +114,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
   const [activeDevices, setActiveDevices] = useState<ActiveDevice[]>([]);
   const [showDevicesModal, setShowDevicesModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isFilePanelCollapsed, setIsFilePanelCollapsed] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -154,7 +169,8 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       setConnected(true);
       newSocket.emit("join_session", { 
         sessionId, 
-        deviceInfo: getDeviceInfo() 
+        deviceInfo: getDeviceInfo(),
+        persistentDeviceId: getPersistentDeviceId()
       });
     });
 
@@ -187,6 +203,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
     newSocket.on("file_deleted", (fileId: string) => {
       setFiles((prev) => prev.filter((f) => f.id !== fileId));
+    });
+
+    newSocket.on("session_deleted", () => {
+      localStorage.removeItem(`${siteConfig.slug}:text:${sessionId}`);
+      router.push("/?status=deleted&origin=other");
     });
 
     // Setup recognition
@@ -380,6 +401,28 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   };
 
+  const handleDeleteSession = async () => {
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteSession = async () => {
+    setShowDeleteModal(false);
+    
+    // Debug logging
+    console.log("[DEBUG] API_URL:", API_URL);
+    console.log("[DEBUG] sessionId:", sessionId);
+    const deleteUrl = `${API_URL}/session/${sessionId}`;
+    console.log("[DEBUG] Attempting to delete session at:", deleteUrl);
+    
+    try {
+      await axios.delete(deleteUrl);
+      router.push("/?status=deleted&origin=self");
+    } catch (err) {
+      console.error("Failed to delete session", err);
+      alert("Failed to delete session. Please try again.");
+    }
+  };
+
   const formatSize = (bytes: number) => {
     if (bytes === 0) return "0 B";
     const k = 1024;
@@ -520,6 +563,15 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           >
             {copiedLink ? <CheckCircle className="w-4 h-4" /> : <Link className="w-4 h-4" />}
             <span className="hidden sm:inline text-xs font-medium">{copiedLink ? 'Copied' : 'Share'}</span>
+          </button>
+
+          <button 
+            onClick={handleDeleteSession}
+            className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-md transition-colors flex items-center gap-2"
+            title="Delete Session"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span className="hidden sm:inline text-xs font-medium">Delete</span>
           </button>
         </div>
       </header>
@@ -800,6 +852,54 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         )}
       </AnimatePresence>
 
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDeleteModal(false)}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-8">
+                <div className="w-16 h-16 bg-rose-500/10 rounded-2xl flex items-center justify-center mb-6 border border-rose-500/20">
+                  <AlertTriangle className="w-8 h-8 text-rose-500" />
+                </div>
+                
+                <h3 className="text-2xl font-bold text-white mb-3">Delete Everything?</h3>
+                <p className="text-slate-400 mb-8 leading-relaxed">
+                  This will instantly wipe all shared text and files for <span className="text-rose-400 font-semibold">everyone</span> in this room. This action cannot be undone.
+                </p>
+                
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={confirmDeleteSession}
+                    className="w-full py-4 px-6 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-2xl transition-all shadow-lg shadow-rose-500/20 active:scale-[0.98] flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                    Delete Everything
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowDeleteModal(false)}
+                    className="w-full py-4 px-6 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-2xl transition-all active:scale-[0.98]"
+                  >
+                    Keep Session
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

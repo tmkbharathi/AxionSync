@@ -96,8 +96,6 @@ export const Background3D = memo(function Background3D({ isStatic = false }: { i
           stencil: false,
           depth: false
         }}
-        // Disable internal clock processing if static
-        clock={isStatic ? null : undefined}
         onCreated={({ gl }) => {
            gl.setClearColor(0x020617, 1);
         }}

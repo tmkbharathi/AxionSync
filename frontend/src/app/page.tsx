@@ -133,8 +133,17 @@ function Home() {
         </motion.div>
 
         <motion.div
-          animate={joinError ? { x: [-5, 5, -5, 5, 0] } : {}}
-          transition={{ duration: 0.4 }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ 
+            opacity: 1, 
+            y: 0,
+            x: joinError ? [-5, 5, -5, 5, 0] : 0 
+          }}
+          transition={{ 
+            opacity: { duration: 0.8, delay: 0.2 },
+            y: { duration: 0.8, delay: 0.2 },
+            x: { duration: 0.4 }
+          }}
           className="mt-8 w-full max-w-[460px] bg-slate-900/30 backdrop-blur-xl border border-slate-800/60 p-1.5 rounded-2xl shadow-2xl flex flex-col sm:flex-row items-center gap-3 group transition-all hover:border-blue-500/30"
         >
 
@@ -216,7 +225,7 @@ function Home() {
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.3 }}
+          transition={{ duration: 0.8, delay: 0.5 }}
           className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-4xl"
         >
           <FeatureCard

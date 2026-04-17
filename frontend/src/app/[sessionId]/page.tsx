@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from "uuid";
 import { 
   Copy, CheckCircle, UploadCloud, Cloud, X, Download, Trash2, Link, 
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
-  Info, Monitor, Tablet, Globe,
+  Info, Monitor, Tablet, Globe, Share2,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
   ChevronsRight, ChevronsLeft, AlertTriangle
 } from "lucide-react";
@@ -238,13 +238,17 @@ const SessionHeader = memo(({
         
         <div className="flex items-center gap-2 px-2 text-sm font-mono text-slate-300">
           {sessionId}
-          <button 
-            onClick={handleCopyLink}
-            className={`p-1.5 rounded transition-all ${copiedLink ? 'text-emerald-400 bg-emerald-400/10' : 'text-slate-500 hover:text-blue-400 hover:bg-blue-400/10'}`}
-          >
-            {copiedLink ? <CheckCircle className="w-3.5 h-3.5" /> : <Link className="w-3.5 h-3.5" />}
-          </button>
         </div>
+
+        <div className="h-4 w-px bg-slate-700" />
+
+        <button 
+          onClick={handleCopyLink}
+          className={`flex items-center gap-2 px-4 py-2 transition-all rounded-md font-bold text-xs border ${copiedLink ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/20 shadow-lg shadow-blue-500/5'}`}
+        >
+          {copiedLink ? <CheckCircle className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+          <span>{copiedLink ? "Copied!" : "Share"}</span>
+        </button>
 
         <div className="h-4 w-px bg-slate-700" />
         

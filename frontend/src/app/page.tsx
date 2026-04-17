@@ -100,6 +100,9 @@ function StarBackground(props: any) {
 function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [isListening, setIsListening] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [isJoining, setIsJoining] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [joinKey, setJoinKey] = useState("");
   const [showThankYou, setShowThankYou] = useState(false);
@@ -135,10 +138,26 @@ function Home() {
     }
   };
 
-  const handleJoin = (e: React.FormEvent) => {
+  const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (joinKey.trim()) {
-      router.push(`/${joinKey.trim().toLowerCase()}`);
+    const key = joinKey.trim().toLowerCase();
+    if (!key) return;
+
+    setIsJoining(true);
+    setJoinError(null);
+
+    try {
+      // Validate session exists on backend
+      await axios.get(`${API_URL}/session/${key}`);
+      router.push(`/${key}`);
+    } catch (err: any) {
+      console.error("Join failed:", err);
+      if (err.response?.status === 404) {
+        setJoinError("Room not found");
+      } else {
+        setJoinError("Failed to connect");
+      }
+      setIsJoining(false);
     }
   };
 
@@ -175,54 +194,88 @@ function Home() {
           <p className="mt-4 text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed">
             Instantly sync your clipboard text and share files securely across all your devices.
           </p>
+        </motion.div>
 
-          <div className="mt-8 w-full max-w-2xl bg-slate-900/30 backdrop-blur-xl border border-slate-800/60 p-2 sm:p-3 rounded-[2rem] shadow-2xl flex flex-col sm:flex-row items-center gap-3 group transition-all hover:border-blue-500/30">
+        <motion.div
+          animate={joinError ? { x: [-5, 5, -5, 5, 0] } : {}}
+          transition={{ duration: 0.4 }}
+          className="mt-8 w-full max-w-[460px] bg-slate-900/30 backdrop-blur-xl border border-slate-800/60 p-1.5 rounded-2xl shadow-2xl flex flex-col sm:flex-row items-center gap-3 group transition-all hover:border-blue-500/30"
+        >
 
-            {/* Create Section */}
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleStart}
-              disabled={isGenerating}
-              className="w-full sm:w-auto flex-1 px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold text-base shadow-[0_0_30px_-10px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 whitespace-nowrap"
-            >
-              <Zap className="w-4 h-4 fill-white" />
-              {isGenerating ? "Preparing..." : "New Session"}
-            </motion.button>
+          {/* Create Section */}
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleStart}
+            disabled={isGenerating}
+            className="w-full sm:w-auto flex-1 px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold text-base shadow-[0_0_30px_-10px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 whitespace-nowrap"
+          >
+            <Zap className="w-4 h-4 fill-white" />
+            {isGenerating ? "Preparing..." : "New Session"}
+          </motion.button>
 
-            {/* Subtle Divider (visible on desktop) */}
-            <div className="hidden sm:block w-px h-8 bg-slate-800" />
+          {/* Subtle Divider (visible on desktop) */}
+          <div className="hidden sm:block w-px h-8 bg-slate-800" />
 
-            {/* Join Section */}
-            <div className="w-full sm:w-auto flex-[1.5] relative">
-              <form onSubmit={handleJoin} className="relative w-full">
-                <input
-                  type="text"
-                  placeholder="session key"
-                  maxLength={8}
-                  value={joinKey}
-                  onChange={(e) => setJoinKey(e.target.value)}
-                  className={`w-full py-4 bg-transparent border-2 border-transparent focus:border-blue-500/20 rounded-2xl outline-none transition-all font-mono tracking-widest uppercase placeholder:text-slate-600 placeholder:font-sans placeholder:tracking-normal placeholder:lowercase placeholder:text-sm placeholder:text-center ${joinKey.length > 0 ? "text-left pl-2 pr-24" : "text-center px-4"
-                    }`}
-                />
-                <AnimatePresence>
-                  {joinKey.trim().length > 0 && (
-                    <motion.button
-                      initial={{ opacity: 0, x: 10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 10 }}
-                      type="submit"
-                      className="absolute right-2 top-2 bottom-2 px-6 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 rounded-xl font-bold text-xs transition-colors shadow-lg flex items-center gap-2"
-                    >
-                      JOIN
-                      <ArrowRight className="w-3 h-3" />
-                    </motion.button>
-                  )}
-                </AnimatePresence>
-              </form>
-            </div>
+          {/* Join Section */}
+          <div className="w-full sm:w-auto flex-[1.5] relative">
+            <form onSubmit={handleJoin} className="relative w-full">
+
+              <input
+                type="text"
+                placeholder="session key"
+                maxLength={8}
+                value={joinKey}
+                onChange={(e) => {
+                  setJoinKey(e.target.value);
+                  if (joinError) setJoinError(null);
+                }}
+                className={`w-full py-4 bg-transparent border-2 ${joinError ? "border-red-500/50" : "border-transparent focus:border-blue-500/20"
+                  } rounded-2xl outline-none transition-all font-mono tracking-widest uppercase placeholder:font-sans placeholder:tracking-normal placeholder:lowercase placeholder:text-sm placeholder:text-center ${joinError ? "placeholder:text-red-400" : "placeholder:text-slate-600"
+                  } ${joinKey.length > 0 ? "text-left pl-2 pr-24" : "text-center px-4"
+                  }`}
+              />
+              <AnimatePresence>
+                {joinKey.trim().length > 0 && (
+                  <motion.button
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 10 }}
+                    type="submit"
+                    disabled={isJoining}
+                    className="absolute right-2 top-2 bottom-2 px-6 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 rounded-xl font-bold text-xs transition-colors shadow-lg flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isJoining ? (
+                      <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        JOIN
+                        <ArrowRight className="w-3 h-3" />
+                      </>
+                    )}
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </form>
           </div>
         </motion.div>
+
+        {/* Minimal Professional Error Message (Absolute to maintain layout stability) */}
+        <div className="relative w-full flex justify-center h-0">
+          <AnimatePresence>
+            {joinError && (
+              <motion.div
+                initial={{ opacity: 0, y: 0 }}
+                animate={{ opacity: 1, y: 12 }}
+                exit={{ opacity: 0, y: 0 }}
+                className="absolute top-0 flex items-center gap-2 text-red-400 font-medium text-[10px] uppercase tracking-[0.2em] bg-slate-900/80 backdrop-blur-md px-4 py-1.5 rounded-full border border-red-500/20 shadow-xl z-20 whitespace-nowrap"
+              >
+                <div className="w-1 h-1 rounded-full bg-red-500 animate-pulse" />
+                {joinError}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         <motion.div
           initial={{ opacity: 0, y: 40 }}

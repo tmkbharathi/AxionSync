@@ -29,20 +29,20 @@ function StarBackground(props: any) {
     window.addEventListener("pointermove", handlePointerMove);
     return () => window.removeEventListener("pointermove", handlePointerMove);
   }, []);
-  
+
   const sphere = useMemo(() => {
     // Generate 5000 random points within a sphere of radius 1.2
     const positions = new Float32Array(5000 * 3);
     for (let i = 0; i < 5000; i++) {
-        const u = Math.random();
-        const v = Math.random();
-        const theta = 2 * Math.PI * u;
-        const phi = Math.acos(2 * v - 1);
-        const r = Math.cbrt(Math.random()) * 1.2;
-        
-        positions[i * 3] = r * Math.sin(phi) * Math.cos(theta); // x
-        positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta); // y
-        positions[i * 3 + 2] = r * Math.cos(phi); // z
+      const u = Math.random();
+      const v = Math.random();
+      const theta = 2 * Math.PI * u;
+      const phi = Math.acos(2 * v - 1);
+      const r = Math.cbrt(Math.random()) * 1.2;
+
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta); // x
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta); // y
+      positions[i * 3 + 2] = r * Math.cos(phi); // z
     }
     return positions;
   }, []);
@@ -58,25 +58,25 @@ function StarBackground(props: any) {
       groupRef.current.rotation.x -= delta / 15;
       groupRef.current.rotation.y -= delta / 20;
     }
-    
+
     // 2. Interactive parallax and sway
     if (pointsRef.current) {
       // Target rotation (sway)
       const targetRotX = pointer.current.y * 0.4;
       const targetRotY = pointer.current.x * 0.4;
-      
+
       // Target position (parallax shift)
       const targetPosX = pointer.current.x * 0.1;
       const targetPosY = pointer.current.y * 0.1;
-      
+
       // Smooth interpolation for rotation
       pointsRef.current.rotation.x += (targetRotX - pointsRef.current.rotation.x) * 0.05;
       pointsRef.current.rotation.y += (targetRotY - pointsRef.current.rotation.y) * 0.05;
-      
+
       // Smooth interpolation for position (adds depth)
       pointsRef.current.position.x += (targetPosX - pointsRef.current.position.x) * 0.03;
       pointsRef.current.position.y += (targetPosY - pointsRef.current.position.y) * 0.03;
-      
+
       // Subtle float oscillation
       pointsRef.current.position.z = Math.sin(timeRef.current * 0.5) * 0.02;
     }
@@ -111,7 +111,7 @@ function Home() {
       setIsDeletedByOther(searchParams.get("origin") === "other");
       // Clean up the URL
       window.history.replaceState({}, '', '/');
-      
+
       // Auto-hide after some time
       const timer = setTimeout(() => setShowThankYou(false), 8000);
       return () => clearTimeout(timer);
@@ -144,95 +144,103 @@ function Home() {
 
   return (
     <div className="relative min-h-screen bg-slate-950 text-white overflow-hidden flex flex-col justify-center items-center">
-      
-        {/* Modern Three.js Particle Container */}
-        <div className="fixed inset-0 pointer-events-none">
-          <Canvas 
-            camera={{ position: [0, 0, 1] }} 
-            dpr={[1, 2]} 
-            clock={useMemo(() => new THREE.Timer() as unknown as THREE.Clock, [])}
-          >
-            <StarBackground />
-          </Canvas>
-        </div>
 
-      <div className="relative z-10 w-full max-w-5xl px-6 py-12 lg:px-8 flex flex-col items-center">
-        
-        <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            className="text-center w-full max-w-md"
+      {/* Modern Three.js Particle Container */}
+      <div className="fixed inset-0 pointer-events-none">
+        <Canvas
+          camera={{ position: [0, 0, 1] }}
+          dpr={[1, 2]}
+          clock={useMemo(() => new THREE.Timer() as unknown as THREE.Clock, [])}
+        >
+          <StarBackground />
+        </Canvas>
+      </div>
+
+      <div className="relative z-10 w-full max-w-5xl px-6 py-6 lg:px-8 flex flex-col items-center">
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="text-center w-full max-w-md"
         >
           <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-[11px] font-bold uppercase tracking-widest text-cyan-400">
             <Zap className="w-3 h-3 fill-cyan-400" />
             Real-Time Sync • <span className="text-cyan-300/80">Beta v{siteConfig.version}</span>
           </div>
-          
-          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 pb-2 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500">
+
+          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-4 pb-2 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500">
             {siteConfig.name}
           </h1>
           <p className="mt-4 text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed">
             Instantly sync your clipboard text and share files securely across all your devices.
           </p>
 
-          <div className="mt-10 flex flex-col gap-4">
+          <div className="mt-8 w-full max-w-2xl bg-slate-900/30 backdrop-blur-xl border border-slate-800/60 p-2 sm:p-3 rounded-[2rem] shadow-2xl flex flex-col sm:flex-row items-center gap-3 group transition-all hover:border-blue-500/30">
+
+            {/* Create Section */}
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleStart}
               disabled={isGenerating}
-              className="w-full px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-lg shadow-[0_0_40px_-10px_rgba(37,99,235,0.5)] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full sm:w-auto flex-1 px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold text-base shadow-[0_0_30px_-10px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 whitespace-nowrap"
             >
-              {isGenerating ? "Creating session..." : "Create New Session"}
-              <ArrowRight className="w-5 h-5" />
+              <Zap className="w-4 h-4 fill-white" />
+              {isGenerating ? "Preparing..." : "New Session"}
             </motion.button>
 
-            <div className="flex items-center gap-4 py-2">
-              <div className="h-px flex-1 bg-slate-800" />
-              <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">OR JOIN EXISTING</span>
-              <div className="h-px flex-1 bg-slate-800" />
-            </div>
+            {/* Subtle Divider (visible on desktop) */}
+            <div className="hidden sm:block w-px h-8 bg-slate-800" />
 
-            <form onSubmit={handleJoin} className="relative group">
-              <input 
-                type="text"
-                placeholder="Enter Session Key"
-                value={joinKey}
-                onChange={(e) => setJoinKey(e.target.value)}
-                className="w-full px-6 py-4 bg-slate-900/40 border border-slate-800 rounded-xl outline-none focus:border-blue-500/50 focus:bg-slate-900/60 transition-all text-center font-mono tracking-widest uppercase placeholder:text-slate-600 placeholder:font-sans placeholder:tracking-normal placeholder:lowercase"
-              />
-              {joinKey.trim().length > 0 && (
-                <motion.button
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  type="submit"
-                  className="absolute right-2 top-2 bottom-2 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-sm transition-colors shadow-lg"
-                >
-                  JOIN
-                </motion.button>
-              )}
-            </form>
+            {/* Join Section */}
+            <div className="w-full sm:w-auto flex-[1.5] relative">
+              <form onSubmit={handleJoin} className="relative w-full">
+                <input
+                  type="text"
+                  placeholder="session key"
+                  maxLength={8}
+                  value={joinKey}
+                  onChange={(e) => setJoinKey(e.target.value)}
+                  className={`w-full py-4 bg-transparent border-2 border-transparent focus:border-blue-500/20 rounded-2xl outline-none transition-all font-mono tracking-widest uppercase placeholder:text-slate-600 placeholder:font-sans placeholder:tracking-normal placeholder:lowercase placeholder:text-sm placeholder:text-center ${joinKey.length > 0 ? "text-left pl-2 pr-24" : "text-center px-4"
+                    }`}
+                />
+                <AnimatePresence>
+                  {joinKey.trim().length > 0 && (
+                    <motion.button
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 10 }}
+                      type="submit"
+                      className="absolute right-2 top-2 bottom-2 px-6 bg-slate-800 hover:bg-slate-700 text-blue-400 border border-slate-700 rounded-xl font-bold text-xs transition-colors shadow-lg flex items-center gap-2"
+                    >
+                      JOIN
+                      <ArrowRight className="w-3 h-3" />
+                    </motion.button>
+                  )}
+                </AnimatePresence>
+              </form>
+            </div>
           </div>
         </motion.div>
 
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.3 }}
-          className="mt-24 grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-4xl"
+          className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-4xl"
         >
-          <FeatureCard 
+          <FeatureCard
             icon={<Copy className="w-6 h-6 text-cyan-400" />}
             title="Real-time Clipboard"
             desc="Copy on one device, paste on any other—instantly and in real-time."
           />
-          <FeatureCard 
+          <FeatureCard
             icon={<Cloud className="w-6 h-6 text-blue-400" />}
             title="Cloud File Storage"
             desc="Upload files up to 50MB and access them from any device."
           />
-          <FeatureCard 
+          <FeatureCard
             icon={<Shield className="w-6 h-6 text-indigo-400" />}
             title="Auto Cleanup"
             desc="Files and text auto-destruct after 12 hours of inactivity."
@@ -244,14 +252,14 @@ function Home() {
       {/* Peaceful Thank You Overlay */}
       <AnimatePresence>
         {showThankYou && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-md"
             onClick={() => setShowThankYou(false)}
           >
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.9, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, y: 20, opacity: 0 }}
@@ -260,7 +268,7 @@ function Home() {
             >
               {/* Decorative Glow */}
               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-40 bg-blue-500/20 rounded-full blur-[60px] pointer-events-none" />
-              
+
               <motion.div
                 initial={{ rotate: -10, scale: 0.8 }}
                 animate={{ rotate: 0, scale: 1 }}
@@ -269,23 +277,23 @@ function Home() {
               >
                 <CheckCircle2 className="w-10 h-10 text-white" />
               </motion.div>
-              
+
               <h2 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
                 {isDeletedByOther ? 'Session Ended' : 'Room Peacefully Closed'}
               </h2>
-              
+
               <p className="text-slate-300 text-lg mb-8 leading-relaxed italic font-medium pt-2 border-t border-slate-800">
                 "May your files find their home and your mind find its peace."
               </p>
-              
+
               <div className="flex flex-col gap-4">
                 <p className="text-slate-500 text-sm">
-                  {isDeletedByOther 
+                  {isDeletedByOther
                     ? "A participant has closed this room and securely wiped all shared data."
                     : "The session has been completely wiped from our systems. Thank you for trusting AxionSync with your temporary workspace."}
                 </p>
-                
-                <button 
+
+                <button
                   onClick={() => setShowThankYou(false)}
                   className="mt-4 px-8 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all border border-slate-700 hover:border-blue-500/30"
                 >

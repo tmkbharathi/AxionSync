@@ -269,7 +269,7 @@ const SessionHeader = memo(({
 const SessionFooter = memo(() => {
   return (
     <footer className="text-[10px] md:text-xs text-slate-500 text-center py-2 bg-slate-950 z-10 border-t border-slate-900 flex justify-center items-center gap-4">
-      <span>Data auto-destructs after 12 hours of inactivity.</span>
+      <span>Data auto-destructs after 24 hours of inactivity.</span>
       <span className="text-slate-700">|</span>
       <span className="font-medium text-slate-600">Beta v{siteConfig.version}</span>
     </footer>
@@ -674,7 +674,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           
           <p className="text-slate-400 text-sm mb-8 leading-relaxed">
             {sessionError === 'expired' 
-              ? "This session has been automatically purged after 12 hours of inactivity to protect your privacy."
+              ? "This session has been automatically purged after 24 hours of inactivity to protect your privacy."
               : `The session "${sessionId}" hasn't been initialized yet. Would you like to start a new workspace here?`}
           </p>
 

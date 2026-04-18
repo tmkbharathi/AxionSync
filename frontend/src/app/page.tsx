@@ -241,7 +241,7 @@ function Home() {
           <FeatureCard
             icon={<Shield className="w-6 h-6 text-indigo-400" />}
             title="Auto Cleanup"
-            desc="Files and text auto-destruct after 12 hours of inactivity."
+            desc="Files and text auto-destruct after 24 hours of inactivity."
           />
         </motion.div>
 

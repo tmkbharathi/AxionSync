@@ -131,7 +131,7 @@ app.route("/session/:sessionId")
 
       // Refresh active status if it was about to expire but data still exists
       if (!isActive) {
-        await redis.set(activeKey, "1", "EX", 43200);
+        await redis.set(activeKey, "1", "EX", 86400);
       }
 
       res.json({ text: text || "", files });
@@ -234,13 +234,13 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
 
     // Save metadata to Redis and reset expiry
     await redis.lpush(filesKey, JSON.stringify(fileMeta));
-    await redis.expire(filesKey, 43200);
+    await redis.expire(filesKey, 86400);
 
     // Reset text expiry so session stays alive
     const textKey = `session:${sessionId}:text`;
     const activeKey = `session:${sessionId}:active`;
-    await redis.expire(textKey, 43200);
-    await redis.expire(activeKey, 43200);
+    await redis.expire(textKey, 86400);
+    await redis.expire(activeKey, 86400);
 
     // Notify clients in session
     io.to(sessionId).emit("file_uploaded", fileMeta);
@@ -264,7 +264,7 @@ app.get("/download", async (req, res) => {
       Bucket: S3_BUCKET_NAME,
       Key: s3Key,
     });
-    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 43200 });
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 86400 });
     res.json({ url: signedUrl });
   } catch (error) {
     console.error("Download error:", error);
@@ -277,7 +277,7 @@ app.post("/session/:sessionId/init", async (req, res) => {
   const { sessionId } = req.params;
   try {
     const activeKey = `session:${sessionId}:active`;
-    await redis.set(activeKey, "1", "EX", 43200); // 12 hours heartbeat
+    await redis.set(activeKey, "1", "EX", 86400); // 24 hours heartbeat
     res.json({ success: true });
   } catch (e) {
     console.error(`Failed to initialize session ${sessionId}:`, e);
@@ -307,9 +307,9 @@ io.on("connection", (socket) => {
 
     // Refresh overall session expiry on join
     try {
-      await redis.expire(`session:${sessionId}:active`, 43200);
-      await redis.expire(`session:${sessionId}:text`, 43200);
-      await redis.expire(`session:${sessionId}:files`, 43200);
+      await redis.expire(`session:${sessionId}:active`, 86400);
+      await redis.expire(`session:${sessionId}:text`, 86400);
+      await redis.expire(`session:${sessionId}:files`, 86400);
     } catch (e) {
       console.warn("Could not refresh session expiry in Redis:", e.message);
     }
@@ -340,8 +340,8 @@ io.on("connection", (socket) => {
     // Save to Redis and refresh heartbeat
     const textKey = `session:${sessionId}:text`;
     const activeKey = `session:${sessionId}:active`;
-    await redis.set(textKey, normalized, "EX", 43200);
-    await redis.expire(activeKey, 43200);
+    await redis.set(textKey, normalized, "EX", 86400);
+    await redis.expire(activeKey, 86400);
 
     // Broadcast to other clients
     socket.to(sessionId).emit("text_updated", { content: normalized });
@@ -398,7 +398,7 @@ io.on("connection", (socket) => {
 cron.schedule("0 * * * *", async () => {
   console.log("Running hourly R2 cleanup job...");
   try {
-    const twelveHoursAgo = new Date(Date.now() - 43200 * 1000);
+    const twentyFourHoursAgo = new Date(Date.now() - 86400 * 1000);
     let isTruncated = true;
     let continuationToken = undefined;
 
@@ -412,7 +412,7 @@ cron.schedule("0 * * * *", async () => {
 
       const keysToDelete = [];
       for (const obj of objects) {
-        if (obj.LastModified && obj.LastModified < twelveHoursAgo) {
+        if (obj.LastModified && obj.LastModified < twentyFourHoursAgo) {
           try {
             // Extract sessionId from the key (format: sessionId/fileId)
             const sessionId = obj.Key.split("/")[0];

@@ -2,6 +2,7 @@
 
 @theme {
   --font-sans: var(--font-outfit), "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --breakpoint-xs: 480px;
 }
 
 :root {
@@ -50,25 +51,25 @@ html, body {
   }
 }
 
-  /* Premium Global Dark Scrollbar */
+  /* Minimalist Transparent Scrollbar */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 5px;
+    height: 5px;
   }
   ::-webkit-scrollbar-track {
-    background: #020617; /* Root slate-950 */
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #1e293b; /* slate-800 */
+    background: rgba(255, 255, 255, 0.2);
     border-radius: 20px;
-    border: 2px solid #020617;
+    transition: background 0.3s ease;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #334155; /* slate-700 */
+    background: rgba(255, 255, 255, 0.4);
   }
 
   /* Firefox Support */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #1e293b #020617;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
   }

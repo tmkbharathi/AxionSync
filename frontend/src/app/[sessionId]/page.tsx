@@ -198,8 +198,8 @@ const SessionHeader = memo(({
   handleDeleteSession: () => void
 }) => {
   return (
-    <header className="flex items-center justify-between px-6 py-4 border-b border-slate-800/60 bg-slate-900/40 backdrop-blur-md z-10">
-      <div className="flex items-center gap-3">
+    <header className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-800/60 bg-slate-900/40 backdrop-blur-md z-10">
+      <div className="flex items-center gap-1.5 sm:gap-3">
         <div className="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
           <Smartphone className="w-5 h-5 text-white" />
         </div>
@@ -207,7 +207,7 @@ const SessionHeader = memo(({
           <div className="flex items-center gap-2">
             <h1 className="font-bold text-lg hidden sm:block">Devices</h1>
           </div>
-          <div className="text-xs text-slate-400 flex items-center gap-2">
+          <div className="text-xs text-slate-400 flex items-center gap-1 sm:gap-2">
             <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
             <div className="flex items-center gap-1.5">
               <span>{connected ? `${roomSize} Connected` : 'System Online'}</span>
@@ -225,7 +225,7 @@ const SessionHeader = memo(({
         </div>
       </div>
 
-      <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
+      <div className="flex items-center gap-1.5 sm:gap-3 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
         <button 
           onClick={() => setShowQr(true)}
           className="p-2 hover:bg-slate-700 rounded-md transition-colors text-slate-300 hover:text-white"
@@ -234,9 +234,9 @@ const SessionHeader = memo(({
           <QrCode className="w-4 h-4" />
         </button>
         
-        <div className="h-4 w-px bg-slate-700" />
+        <div className="h-4 w-px bg-slate-700 hidden sm:block" />
         
-        <div className="flex items-center gap-2 px-2 text-sm font-mono text-slate-300">
+        <div className="hidden sm:flex items-center gap-2 px-1 sm:px-2 text-[10px] sm:text-sm font-mono text-slate-300">
           {sessionId}
         </div>
 
@@ -244,10 +244,10 @@ const SessionHeader = memo(({
 
         <button 
           onClick={handleCopyLink}
-          className={`flex items-center gap-2 px-4 py-2 transition-all rounded-md font-bold text-xs border ${copiedLink ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/20 shadow-lg shadow-blue-500/5'}`}
+          className={`flex items-center gap-2 px-2 sm:px-4 py-2 transition-all rounded-md font-bold text-xs border ${copiedLink ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/20 shadow-lg shadow-blue-500/5'}`}
         >
           {copiedLink ? <CheckCircle className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-          <span>{copiedLink ? "Copied!" : "Share"}</span>
+          <span className="hidden sm:inline">{copiedLink ? "Copied!" : "Share"}</span>
         </button>
 
         <div className="h-4 w-px bg-slate-700" />
@@ -767,7 +767,8 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
               value={text}
               onChange={handleTextChange}
               placeholder="Type or paste text here... It will sync instantly."
-              className="w-full h-full p-6 bg-transparent resize-none outline-none text-slate-200 placeholder:text-slate-600 font-mono text-sm leading-relaxed"
+              style={{ scrollbarGutter: 'stable' }}
+              className="w-full h-full p-3 bg-transparent resize-none outline-none text-slate-200 placeholder:text-slate-600 font-mono text-sm leading-relaxed"
             />
           </div>
 
@@ -937,8 +938,17 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                 <QRCodeSVG value={window.location.href} size={200} />
               </div>
               
-              <div className="mt-6 w-full text-center p-3 bg-slate-800/50 rounded-lg border border-slate-700/50 font-mono text-sm break-all">
-                {window.location.href}
+              <div className="mt-6 w-full relative group">
+                <div className="pr-10 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50 font-mono text-sm break-all text-slate-300 select-all">
+                  {window.location.href}
+                </div>
+                <button 
+                  onClick={handleCopyLink}
+                  className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${copiedLink ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-blue-400 hover:bg-slate-800'}`}
+                  title="Copy Link"
+                >
+                  {copiedLink ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
               </div>
             </motion.div>
           </motion.div>

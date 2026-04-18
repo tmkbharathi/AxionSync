@@ -134,12 +134,12 @@ function Home() {
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
-          animate={{ 
-            opacity: 1, 
+          animate={{
+            opacity: 1,
             y: 0,
-            x: joinError ? [-5, 5, -5, 5, 0] : 0 
+            x: joinError ? [-5, 5, -5, 5, 0] : 0
           }}
-          transition={{ 
+          transition={{
             opacity: { duration: 0.8, delay: 0.2 },
             y: { duration: 0.8, delay: 0.2 },
             x: { duration: 0.4 }
@@ -177,7 +177,7 @@ function Home() {
                 }}
                 className={`w-full py-4 bg-transparent border-2 ${joinError ? "border-red-500/50" : "border-transparent focus:border-blue-500/20"
                   } rounded-2xl outline-none transition-all font-mono tracking-widest uppercase placeholder:font-sans placeholder:tracking-normal placeholder:lowercase placeholder:text-sm placeholder:text-center ${joinError ? "placeholder:text-red-400" : "placeholder:text-slate-600"
-                  } ${joinKey.length > 0 ? "text-left pl-2 pr-24" : "text-center px-4"
+                  } text-center ${joinKey.length > 0 ? "pr-26" : "px-4"
                   }`}
               />
               <AnimatePresence>

@@ -24,6 +24,7 @@ const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "";
 const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "";
 const S3_BUCKET_NAME = process.env.S3_BUCKET_NAME || "clipbridge";
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+const ALL_SESSIONS_KEY = "syncosync:all_sessions";
 
 const redis = new Redis(REDIS_URL, {
   retryStrategy: (times) => Math.min(times * 100, 3000),
@@ -99,13 +100,17 @@ app.route("/session/:sessionId")
       const textKey = `session:${sessionId}:text`;
       const filesKey = `session:${sessionId}:files`;
 
-      const [isActive, text, filesCount] = await Promise.all([
+      const [isActive, text, filesCount, isPurged] = await Promise.all([
         redis.exists(activeKey),
         redis.get(textKey),
-        redis.llen(filesKey)
+        redis.llen(filesKey),
+        redis.get(`session:${sessionId}:purged_empty`)
       ]);
 
       if (!isActive && text === null && filesCount === 0) {
+        if (isPurged) {
+          return res.status(410).json({ error: "purged_due_to_inactivity" });
+        }
         return res.status(404).json({ error: "Session not found or expired" });
       }
 
@@ -129,7 +134,12 @@ app.route("/session/:sessionId")
         })
       );
 
-      // Refresh active status if it was about to expire but data still exists
+      // Refresh activity and session tracking
+      await Promise.all([
+        redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
+        redis.sadd(ALL_SESSIONS_KEY, sessionId)
+      ]);
+
       if (!isActive) {
         await redis.set(activeKey, "1", "EX", 86400);
       }
@@ -164,7 +174,8 @@ app.route("/session/:sessionId")
       }
 
       // 2. Delete all keys from Redis
-      await redis.del(activeKey, textKey, filesKey);
+      await redis.del(activeKey, textKey, filesKey, `session:${sessionId}:last_active`, `session:${sessionId}:purged_empty`);
+      await redis.srem(ALL_SESSIONS_KEY, sessionId);
 
       // 3. Notify all clients in the session
       io.to(sessionId).emit("session_deleted");
@@ -239,8 +250,12 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
     // Reset text expiry so session stays alive
     const textKey = `session:${sessionId}:text`;
     const activeKey = `session:${sessionId}:active`;
-    await redis.expire(textKey, 86400);
-    await redis.expire(activeKey, 86400);
+    await Promise.all([
+      redis.expire(textKey, 86400),
+      redis.expire(activeKey, 86400),
+      redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
+      redis.sadd(ALL_SESSIONS_KEY, sessionId)
+    ]);
 
     // Notify clients in session
     io.to(sessionId).emit("file_uploaded", fileMeta);
@@ -277,7 +292,11 @@ app.post("/session/:sessionId/init", async (req, res) => {
   const { sessionId } = req.params;
   try {
     const activeKey = `session:${sessionId}:active`;
-    await redis.set(activeKey, "1", "EX", 86400); // 24 hours heartbeat
+    await Promise.all([
+      redis.set(activeKey, "1", "EX", 86400), // 24 hours heartbeat
+      redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
+      redis.sadd(ALL_SESSIONS_KEY, sessionId)
+    ]);
     res.json({ success: true });
   } catch (e) {
     console.error(`Failed to initialize session ${sessionId}:`, e);
@@ -307,9 +326,13 @@ io.on("connection", (socket) => {
 
     // Refresh overall session expiry on join
     try {
-      await redis.expire(`session:${sessionId}:active`, 86400);
-      await redis.expire(`session:${sessionId}:text`, 86400);
-      await redis.expire(`session:${sessionId}:files`, 86400);
+      await Promise.all([
+        redis.expire(`session:${sessionId}:active`, 86400),
+        redis.expire(`session:${sessionId}:text`, 86400),
+        redis.expire(`session:${sessionId}:files`, 86400),
+        redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
+        redis.sadd(ALL_SESSIONS_KEY, sessionId)
+      ]);
     } catch (e) {
       console.warn("Could not refresh session expiry in Redis:", e.message);
     }
@@ -338,10 +361,13 @@ io.on("connection", (socket) => {
     const normalized = content.replace(/\r\n/g, "\n");
 
     // Save to Redis and refresh heartbeat
-    const textKey = `session:${sessionId}:text`;
     const activeKey = `session:${sessionId}:active`;
-    await redis.set(textKey, normalized, "EX", 86400);
-    await redis.expire(activeKey, 86400);
+    await Promise.all([
+      redis.set(textKey, normalized, "EX", 86400),
+      redis.expire(activeKey, 86400),
+      redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
+      redis.sadd(ALL_SESSIONS_KEY, sessionId)
+    ]);
 
     // Broadcast to other clients
     socket.to(sessionId).emit("text_updated", { content: normalized });
@@ -365,6 +391,7 @@ io.on("connection", (socket) => {
         await redis.lrem(filesKey, 1, fileStr);
       }
 
+      await redis.set(`session:${sessionId}:last_active`, Date.now().toString());
       io.to(sessionId).emit("file_deleted", file.id);
     } catch (err) {
       console.error("Delete error:", err);
@@ -442,6 +469,54 @@ cron.schedule("0 * * * *", async () => {
       continuationToken = response.NextContinuationToken;
     }
     console.log("Hourly R2 cleanup finished.");
+
+    // --- SESSION AUTO-CLEANUP (EMPTY ROOMS) ---
+    console.log("Running hourly session inactivity cleanup...");
+    const oneHourAgo = Date.now() - 3600 * 1000;
+    const sessionIds = await redis.smembers(ALL_SESSIONS_KEY);
+
+    for (const sessionId of sessionIds) {
+      try {
+        const activeKey = `session:${sessionId}:active`;
+        const textKey = `session:${sessionId}:text`;
+        const filesKey = `session:${sessionId}:files`;
+        const lastActiveKey = `session:${sessionId}:last_active`;
+
+        const [isActive, text, filesCount, lastActive] = await Promise.all([
+          redis.exists(activeKey),
+          redis.get(textKey),
+          redis.llen(filesKey),
+          redis.get(lastActiveKey)
+        ]);
+
+        // If session keys don't exist anymore, remove from tracking set
+        if (!isActive && text === null && filesCount === 0) {
+          await redis.srem(ALL_SESSIONS_KEY, sessionId);
+          continue;
+        }
+
+        // Logic for empty session cleanup
+        const isEmpty = (!text || text.trim() === "") && filesCount === 0;
+        const lastActiveTs = lastActive ? parseInt(lastActive) : 0;
+
+        if (isEmpty && lastActiveTs < oneHourAgo) {
+          console.log(`[CLEANUP] Deleting empty session: ${sessionId}`);
+          
+          // Set "purged" marker for 24 hours
+          await redis.set(`session:${sessionId}:purged_empty`, "1", "EX", 86400);
+          
+          // Delete all data
+          await redis.del(activeKey, textKey, filesKey, lastActiveKey);
+          await redis.srem(ALL_SESSIONS_KEY, sessionId);
+          
+          // Notify clients
+          io.to(sessionId).emit("session_deleted");
+        }
+      } catch (err) {
+        console.error(`Error during session cleanup for ${sessionId}:`, err);
+      }
+    }
+    console.log("Session inactivity cleanup finished.");
   } catch (err) {
     console.error("Cleanup job error:", err);
   }

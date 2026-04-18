@@ -299,7 +299,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [roomSize, setRoomSize] = useState(0);
 
   const [isValidating, setIsValidating] = useState(true);
-  const [sessionError, setSessionError] = useState<"expired" | "not_found" | null>(null);
+  const [sessionError, setSessionError] = useState<"expired" | "not_found" | "purged" | null>(null);
   const [isActivating, setIsActivating] = useState(false);
 
   const [activeDevices, setActiveDevices] = useState<ActiveDevice[]>([]);
@@ -342,7 +342,9 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           return;
         }
 
-        if (err.response?.status === 404) {
+        if (err.response?.status === 410) {
+          setSessionError("purged");
+        } else if (err.response?.status === 404) {
           // Check if data existed in cache; if so, it's definitely expired
           if (cachedText) setSessionError("expired");
           else setSessionError("not_found");
@@ -670,12 +672,15 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           </div>
           
           <h1 className="text-2xl font-bold mb-3">
-            {sessionError === 'expired' ? 'Session Expired' : 'Room Not Found'}
+            {sessionError === 'expired' ? 'Session Expired' : 
+             sessionError === 'purged' ? 'Room Purged' : 'Room Not Found'}
           </h1>
           
           <p className="text-slate-400 text-sm mb-8 leading-relaxed">
             {sessionError === 'expired' 
               ? "This session has been automatically purged after 24 hours of inactivity to protect your privacy."
+              : sessionError === 'purged'
+              ? "The session is deleted already because of no entry."
               : `The session "${sessionId}" hasn't been initialized yet. Would you like to start a new workspace here?`}
           </p>
 

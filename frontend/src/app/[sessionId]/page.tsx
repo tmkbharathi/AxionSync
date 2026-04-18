@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, useRef, use, memo } from "react";
+import { useEffect, useState, useRef, use, memo, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { QRCodeSVG } from "qrcode.react";
+import dynamic from "next/dynamic";
 import { v4 as uuidv4 } from "uuid";
 import { 
   Copy, CheckCircle, UploadCloud, Cloud, X, Download, Trash2, Link, 
@@ -16,7 +16,13 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
-import { Background3D } from "@/components/Background3D";
+
+// Dynamic imports for heavy components
+const Background3D = dynamic(() => import("@/components/Background3D").then(mod => mod.Background3D), { 
+  ssr: false,
+  loading: () => <div className="fixed inset-0 bg-slate-950" /> 
+});
+const QRCodeSVG = dynamic(() => import("qrcode.react").then(mod => mod.QRCodeSVG), { ssr: false });
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -276,138 +282,70 @@ const SessionFooter = memo(() => {
   );
 });
 
-export default function SessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
-  const { sessionId } = use(params);
-  const router = useRouter();
-  
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const [connected, setConnected] = useState(false);
-  
-  const [text, setText] = useState("");
-  const [files, setFiles] = useState<FileMeta[]>([]);
-  
-  const [activeTab, setActiveTab] = useState<"text" | "files">("text");
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isDragOver, setIsDragOver] = useState(false);
-  
-  const [showQr, setShowQr] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
+// --- NEW COMPONENT: ClipboardPanel ---
+const ClipboardPanel = memo(({ 
+  sessionId, 
+  socket, 
+  connected, 
+  initialText,
+  activeTab,
+  isFilePanelCollapsed
+}: { 
+  sessionId: string, 
+  socket: Socket | null, 
+  connected: boolean,
+  initialText: string,
+  activeTab: string,
+  isFilePanelCollapsed: boolean
+}) => {
+  const [text, setText] = useState(initialText);
+  const [fontSize, setFontSize] = useState(14);
   const [copiedText, setCopiedText] = useState(false);
   const [isListening, setIsListening] = useState(false);
-
-  const [roomSize, setRoomSize] = useState(0);
-
-  const [isValidating, setIsValidating] = useState(true);
-  const [sessionError, setSessionError] = useState<"expired" | "not_found" | "purged" | null>(null);
-  const [isActivating, setIsActivating] = useState(false);
-
-  const [activeDevices, setActiveDevices] = useState<ActiveDevice[]>([]);
-  const [showDevicesModal, setShowDevicesModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [isFilePanelCollapsed, setIsFilePanelCollapsed] = useState(false);
-  const [fontSize, setFontSize] = useState(14);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef(text);
+  const isLocalChange = useRef(false);
   const recognitionRef = useRef<any>(null);
-  const hasAutoAttempted = useRef(false);
-  const isLocalChange = useRef(false); // To prevent sync loops and distinguish local typing
 
+  // Sync with initialText from parent (only for first load or remote updates)
   useEffect(() => {
-    // Check localStorage cache first for fast offline load
-    const cachedText = localStorage.getItem(`${siteConfig.slug}:text:${sessionId}`);
-    if (cachedText) {
-      setText(cachedText);
-      textRef.current = cachedText;
+    if (initialText !== textRef.current) {
+      setText(initialText);
+      textRef.current = initialText;
     }
+  }, [initialText]);
 
-    // Fetch initial state
-    axios.get(`${API_URL}/session/${sessionId}`)
-      .then((res) => {
-        setText(res.data.text || "");
-        textRef.current = res.data.text || "";
-        setFiles(res.data.files || []);
-        if (res.data.text) localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, res.data.text);
-        setIsValidating(false);
-      })
-      .catch(err => {
-        console.error("Failed to load session state", err);
-        
-        // Smart Auto-Init: If 404 but we have no local cache, 
-        // it means we just created it but backend isn't ready. Try activating once.
-        if (err.response?.status === 404 && !cachedText && !hasAutoAttempted.current) {
-          hasAutoAttempted.current = true;
-          handleActivateSession();
-          return;
-        }
-
-        if (err.response?.status === 410) {
-          setSessionError("purged");
-        } else if (err.response?.status === 404) {
-          // Check if data existed in cache; if so, it's definitely expired
-          if (cachedText) setSessionError("expired");
-          else setSessionError("not_found");
-        } else {
-          // General connection or server error
-          setSessionError("not_found"); // Re-using as fallback
-        }
-        setIsValidating(false);
-      });
-
-    // Connect WebSocket
-    const newSocket = io(SOCKET_URL, { transports: ["websocket"] });
-    setSocket(newSocket);
-
-    newSocket.on("connect", () => {
-      setConnected(true);
-      newSocket.emit("join_session", { 
-        sessionId, 
-        deviceInfo: getDeviceInfo(),
-        persistentDeviceId: getPersistentDeviceId()
-      });
-    });
-
-    newSocket.on("disconnect", () => setConnected(false));
-
-    newSocket.on("text_updated", ({ content }: { content: string }) => {
+  // WebSocket Listener for text updates
+  useEffect(() => {
+    if (!socket) return;
+    const handleUpdate = ({ content }: { content: string }) => {
       if (content !== textRef.current) {
-        isLocalChange.current = false; // Mark as remote update
+        isLocalChange.current = false;
         setText(content);
         textRef.current = content;
         localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, content);
       }
-    });
+    };
+    socket.on("text_updated", handleUpdate);
+    return () => { socket.off("text_updated", handleUpdate); };
+  }, [socket, sessionId]);
 
-    newSocket.on("file_uploaded", (file: FileMeta) => {
-      setFiles((prev) => [file, ...prev.filter(f => f.id !== file.id)]);
-    });
+  // Debounced Sync Effect
+  useEffect(() => {
+    if (!isLocalChange.current) return;
 
-    newSocket.on("connected_devices", (count: number) => {
-      setRoomSize(count);
-    });
+    const timer = setTimeout(() => {
+      if (socket && connected) {
+        socket.emit("update_text", { sessionId, content: text });
+        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, text);
+      }
+      isLocalChange.current = false;
+    }, 1000);
 
-    // Handle room size updates from backend
-    newSocket.on("room_size", (size: number) => {
-      setRoomSize(size);
-    });
+    return () => clearTimeout(timer);
+  }, [text, socket, connected, sessionId]);
 
-    newSocket.on("room_devices", (devices: ActiveDevice[]) => {
-      setActiveDevices(devices);
-    });
-
-
-
-    newSocket.on("file_deleted", (fileId: string) => {
-      setFiles((prev) => prev.filter((f) => f.id !== fileId));
-    });
-
-    newSocket.on("session_deleted", () => {
-      localStorage.removeItem(`${siteConfig.slug}:text:${sessionId}`);
-      router.push("/?status=deleted&origin=other");
-    });
-
-    // Setup recognition
+  // Setup Speech Recognition
+  useEffect(() => {
     if (typeof window !== "undefined" && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
       const SpeechReg = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       recognitionRef.current = new SpeechReg();
@@ -431,39 +369,190 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         }
       };
       
-      recognitionRef.current.onerror = (e: any) => {
-          console.error("Speech Rec error", e);
-          setIsListening(false);
-      }
-      
-      recognitionRef.current.onend = () => {
-          setIsListening(false);
-      }
+      recognitionRef.current.onerror = () => setIsListening(false);
+      recognitionRef.current.onend = () => setIsListening(false);
     }
-
-    return () => {
-      newSocket.disconnect();
-      if (recognitionRef.current) recognitionRef.current.stop();
-    };
-  }, [sessionId, SOCKET_URL, API_URL]);
-
-  // Handle Escape key to close modals
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setShowQr(false);
-        setShowDevicesModal(false);
-        // Remove focus to prevent accessibility rings from showing
-        if (document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => { if (recognitionRef.current) recognitionRef.current.stop(); };
   }, []);
 
-  const handleActivateSession = async () => {
+  const handleTextChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newText = e.target.value;
+    isLocalChange.current = true;
+    setText(newText);
+    textRef.current = newText;
+  }, []);
+
+  const toggleListening = useCallback(() => {
+    if(isListening) {
+        recognitionRef.current?.stop();
+        setIsListening(false);
+    } else {
+        if(!recognitionRef.current) {
+            alert("Speech to text is not supported in this browser.");
+            return;
+        }
+        recognitionRef.current.start();
+        setIsListening(true);
+    }
+  }, [isListening]);
+
+  const handleCopyText = useCallback(() => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(true);
+    setTimeout(() => setCopiedText(false), 2000);
+  }, [text]);
+
+  return (
+    <div className={`h-full flex flex-col items-stretch p-4 md:p-6 transition-all duration-300 ease-in-out ${activeTab === 'text' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-full' : 'w-full md:w-3/5 lg:w-2/3'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-slate-200">Clipboard</h2>
+          <button 
+            onClick={toggleListening}
+            className={`p-1.5 rounded text-white transition-colors border ${isListening ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'}`}
+          >
+            {isListening ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+          </button>
+          <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5">
+            <button onClick={() => setFontSize(p => Math.max(10, p - 2))} className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"><Minus className="w-3.5 h-3.5" /></button>
+            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+            <button onClick={() => setFontSize(p => Math.min(48, p + 2))} className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"><Plus className="w-3.5 h-3.5" /></button>
+          </div>
+        </div>
+        <button onClick={handleCopyText} className="p-1.5 sm:px-3 sm:py-1.5 text-xs font-medium rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-700">
+          {copiedText ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          <span className="hidden sm:inline">{copiedText ? 'Copied!' : 'Copy All'}</span>
+        </button>
+      </div>
+      <div className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all shadow-inner">
+        <textarea
+          value={text}
+          onChange={handleTextChange}
+          placeholder="Type or paste text here... It will sync instantly."
+          style={{ scrollbarGutter: 'stable', fontSize: `${fontSize}px` }}
+          className="w-full h-full p-3 bg-transparent resize-none outline-none text-slate-200 placeholder:text-slate-600 font-mono leading-relaxed"
+        />
+      </div>
+    </div>
+  );
+});
+
+// --- NEW COMPONENT: FileManagerPanel ---
+const FileManagerPanel = memo(({ 
+  files, 
+  uploading, 
+  uploadProgress, 
+  activeTab, 
+  isFilePanelCollapsed,
+  processFile,
+  handleDownloadFile,
+  handleDeleteFile,
+  setIsFilePanelCollapsed
+}: { 
+  files: FileMeta[], 
+  uploading: boolean, 
+  uploadProgress: number,
+  activeTab: string,
+  isFilePanelCollapsed: boolean,
+  processFile: (f: File) => void,
+  handleDownloadFile: (f: FileMeta) => void,
+  handleDeleteFile: (f: FileMeta) => void,
+  setIsFilePanelCollapsed: (v: boolean) => void
+}) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    processFile(e.target.files[0]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [processFile]);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files?.length) processFile(e.dataTransfer.files[0]);
+  }, [processFile]);
+
+  return (
+    <div className={`h-full bg-slate-900/20 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${activeTab === 'files' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-full md:w-2/5 lg:w-1/3 opacity-100'}`}>
+      <div className="p-4 md:p-6 border-b border-slate-800/60">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-slate-200">Files</h2>
+          <span className="text-xs text-slate-400 px-2 py-1 bg-slate-800 rounded-full">{files.length} items</span>
+        </div>
+        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+        <div onDrop={onDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} className="relative">
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className={`w-full py-4 border-2 border-dashed ${isDragOver ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-700/80 text-slate-400"} rounded-xl flex flex-col items-center justify-center gap-2 hover:bg-slate-800/30 hover:border-blue-500/50 hover:text-blue-400 transition-all overflow-hidden relative group`}
+          >
+            {uploading ? (
+              <div className="absolute inset-0 bg-slate-800/80 flex flex-col items-center justify-center backdrop-blur-sm z-10">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-400 mb-2" />
+                <div className="w-2/3 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${uploadProgress}%` }} />
+                </div>
+                <span className="text-xs mt-2 font-medium text-slate-300">{uploadProgress}%</span>
+              </div>
+            ) : (
+              <>
+                <div className="p-3 bg-slate-800 rounded-full group-hover:scale-110 transition-transform"><UploadCloud className="w-5 h-5 text-slate-300" /></div>
+                <span className="text-sm font-medium">Click or Drag to Upload (Max 50MB)</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
+        {files.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-60">
+            <Cloud className="w-12 h-12 mb-3 grayscale" /><p className="text-sm">No files uploaded yet</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <AnimatePresence>
+              {files.map((f) => <FileItem key={f.id} file={f} handleDownload={handleDownloadFile} handleDelete={handleDeleteFile} />)}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+export default function SessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
+  const { sessionId } = use(params);
+  const router = useRouter();
+  
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [connected, setConnected] = useState(false);
+  
+  const [text, setText] = useState("");
+  const [files, setFiles] = useState<FileMeta[]>([]);
+  
+  const [activeTab, setActiveTab] = useState<"text" | "files">("text");
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  
+  const [showQr, setShowQr] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const [roomSize, setRoomSize] = useState(0);
+
+  const [isValidating, setIsValidating] = useState(true);
+  const [sessionError, setSessionError] = useState<"expired" | "not_found" | "purged" | null>(null);
+  const [isActivating, setIsActivating] = useState(false);
+
+  const [activeDevices, setActiveDevices] = useState<ActiveDevice[]>([]);
+  const [showDevicesModal, setShowDevicesModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isFilePanelCollapsed, setIsFilePanelCollapsed] = useState(false);
+
+  const hasAutoAttempted = useRef(false);
+
+  const handleActivateSession = useCallback(async () => {
     setIsActivating(true);
     try {
       await axios.post(`${API_URL}/session/${sessionId}/init`);
@@ -473,159 +562,126 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     } finally {
       setIsActivating(false);
     }
-  };
+  }, [sessionId]);
 
-  // Debounced Sync Effect
   useEffect(() => {
-    if (!isLocalChange.current) return;
+    const cachedText = localStorage.getItem(`${siteConfig.slug}:text:${sessionId}`);
+    if (cachedText) setText(cachedText);
 
-    const timer = setTimeout(() => {
-      if (socket && connected) {
-        socket.emit("update_text", { sessionId, content: text });
-        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, text);
+    axios.get(`${API_URL}/session/${sessionId}`)
+      .then((res) => {
+        setText(res.data.text || "");
+        setFiles(res.data.files || []);
+        if (res.data.text) localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, res.data.text);
+        setIsValidating(false);
+      })
+      .catch(err => {
+        if (err.response?.status === 404 && !cachedText && !hasAutoAttempted.current) {
+          hasAutoAttempted.current = true;
+          handleActivateSession();
+          return;
+        }
+        if (err.response?.status === 410) setSessionError("purged");
+        else if (err.response?.status === 404) setSessionError(cachedText ? "expired" : "not_found");
+        else setSessionError("not_found");
+        setIsValidating(false);
+      });
+
+    const newSocket = io(SOCKET_URL, { transports: ["websocket"] });
+    setSocket(newSocket);
+
+    newSocket.on("connect", () => {
+      setConnected(true);
+      newSocket.emit("join_session", { 
+        sessionId, deviceInfo: getDeviceInfo(), persistentDeviceId: getPersistentDeviceId() 
+      });
+    });
+    newSocket.on("disconnect", () => setConnected(false));
+    newSocket.on("file_uploaded", (file: FileMeta) => {
+      setFiles((prev) => [file, ...prev.filter(f => f.id !== file.id)]);
+    });
+    newSocket.on("room_size", (size: number) => setRoomSize(size));
+    newSocket.on("room_devices", (devices: ActiveDevice[]) => setActiveDevices(devices));
+    newSocket.on("file_deleted", (id: string) => setFiles((p) => p.filter((f) => f.id !== id)));
+    newSocket.on("session_deleted", () => {
+      localStorage.removeItem(`${siteConfig.slug}:text:${sessionId}`);
+      router.push("/?status=deleted&origin=other");
+    });
+
+    return () => { newSocket.disconnect(); };
+  }, [sessionId, handleActivateSession, router]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowQr(false);
+        setShowDevicesModal(false);
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       }
-      isLocalChange.current = false;
-    }, 1000); // 1 second debounce for optimal performance
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
-    return () => clearTimeout(timer);
-  }, [text, socket, connected, sessionId]);
-
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newText = e.target.value;
-    isLocalChange.current = true; // Mark as local typing
-    setText(newText);
-    textRef.current = newText;
-  };
-
-
-
-  const toggleListening = () => {
-      if(isListening) {
-          recognitionRef.current?.stop();
-          setIsListening(false);
-      } else {
-          if(!recognitionRef.current) {
-              alert("Speech to text is not supported in this browser.");
-              return;
-          }
-          recognitionRef.current.start();
-          setIsListening(true);
-      }
-  };
-
-  const handleCopyText = () => {
-    navigator.clipboard.writeText(text);
-    setCopiedText(true);
-    setTimeout(() => setCopiedText(false), 2000);
-  };
-
-  const handleCopyLink = () => {
+  const handleCopyLink = useCallback(() => {
     navigator.clipboard.writeText(window.location.href);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
-  };
+  }, []);
 
-  const processFile = async (file: File) => {
-    if (file.size > 50 * 1024 * 1024) {
-      alert("Error: File size exceeds 50MB limit");
-      return;
-    }
-    
-    if (file.size > 20 * 1024 * 1024) {
-      const confirm = window.confirm("Warning: Uploading large files (>20MB) may take some time. Do you want to continue?");
-      if (!confirm) return;
-    }
+  const processFile = useCallback(async (file: File) => {
+    if (file.size > 50 * 1024 * 1024) return alert("File exceeds 50MB limit");
+    if (file.size > 20 * 1024 * 1024 && !window.confirm("Large file download (>20MB) may take time. Continue?")) return;
 
     const formData = new FormData();
     formData.append("file", file);
-
     setUploading(true);
     setUploadProgress(0);
 
     try {
       await axios.post(`${API_URL}/upload/${sessionId}`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            const pct = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            setUploadProgress(pct);
-          }
-        }
+        onUploadProgress: (p) => { if (p.total) setUploadProgress(Math.round((p.loaded * 100) / p.total)); }
       });
     } catch (err: any) {
-      console.error("Upload failed", err);
-      if (err.response && err.response.data && err.response.data.error) {
-        alert(err.response.data.error);
-      } else {
-        alert("Upload failed");
-      }
+      alert(err.response?.data?.error || "Upload failed");
     } finally {
       setUploading(false);
       setUploadProgress(0);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  };
+  }, [sessionId]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    processFile(e.target.files[0]);
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
-
-  const handleDownloadFile = async (file: FileMeta) => {
+  const handleDownloadFile = useCallback(async (file: FileMeta) => {
     try {
       const res = await axios.get(`${API_URL}/download?s3Key=${encodeURIComponent(file.s3Key)}`);
       window.open(res.data.url, "_blank");
     } catch (err) {
-      console.error("Download fail", err);
       alert("Could not generate download link");
     }
-  };
+  }, []);
 
-  const handleDeleteFile = (file: FileMeta) => {
-    if (socket && connected) {
-      socket.emit("delete_file", { sessionId, file });
-    }
-  };
+  const handleDeleteFile = useCallback((file: FileMeta) => {
+    if (socket && connected) socket.emit("delete_file", { sessionId, file });
+  }, [socket, connected, sessionId]);
 
-  const handleDeleteSession = async () => {
-    setShowDeleteModal(true);
-  };
-
-  const confirmDeleteSession = async () => {
+  const confirmDeleteSession = useCallback(async () => {
     setShowDeleteModal(false);
-    
-    // Debug logging
-    console.log("[DEBUG] API_URL:", API_URL);
-    console.log("[DEBUG] sessionId:", sessionId);
-    const deleteUrl = `${API_URL}/session/${sessionId}`;
-    console.log("[DEBUG] Attempting to delete session at:", deleteUrl);
-    
     try {
-      await axios.delete(deleteUrl);
+      await axios.delete(`${API_URL}/session/${sessionId}`);
       router.push("/?status=deleted&origin=self");
     } catch (err) {
-      console.error("Failed to delete session", err);
-      alert("Failed to delete session. Please try again.");
+      alert("Failed to delete session");
     }
-  };
+  }, [sessionId, router]);
+
+  const handleDeleteSession = useCallback(() => {
+    setShowDeleteModal(true);
+  }, []);
+
+
+
+
+
 
 
   if (isValidating) {
@@ -740,66 +796,16 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         >
           Files
         </button>
-      </div>
-
-      {/* Main Content Area */}
+      </div>      {/* Main Content Area */}
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative z-10">
-        
-        {/* TEXT PANEL */}
-        <div className={`h-full flex flex-col items-stretch p-4 md:p-6 transition-all duration-300 ease-in-out ${activeTab === 'text' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-full' : 'w-full md:w-3/5 lg:w-2/3'}`}>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-slate-200">Clipboard</h2>
-
-              <button 
-                onClick={toggleListening}
-                className={`p-1.5 rounded text-white transition-colors border ${isListening ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'}`}
-                title={isListening ? "Stop listening" : "Start Voice Typing"}
-              >
-                {isListening ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
-              </button>
-
-              <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5">
-                <button 
-                  onClick={() => setFontSize(prev => Math.max(10, prev - 2))}
-                  className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"
-                  title="Zoom Out"
-                >
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-                <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
-                <button 
-                  onClick={() => setFontSize(prev => Math.min(48, prev + 2))}
-                  className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"
-                  title="Zoom In"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-            <button 
-              onClick={handleCopyText}
-              className="p-1.5 sm:px-3 sm:py-1.5 text-xs font-medium rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-700"
-            >
-              {copiedText ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">
-                {copiedText ? 'Copied!' : 'Copy All'}
-              </span>
-            </button>
-          </div>
-          
-          <div className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all shadow-inner">
-            <textarea
-              value={text}
-              onChange={handleTextChange}
-              placeholder="Type or paste text here... It will sync instantly."
-              style={{ scrollbarGutter: 'stable', fontSize: `${fontSize}px` }}
-              className="w-full h-full p-3 bg-transparent resize-none outline-none text-slate-200 placeholder:text-slate-600 font-mono leading-relaxed"
-            />
-          </div>
-
-
-        </div>
+        <ClipboardPanel 
+          sessionId={sessionId}
+          socket={socket}
+          connected={connected}
+          initialText={text}
+          activeTab={activeTab}
+          isFilePanelCollapsed={isFilePanelCollapsed}
+        />
 
         {/* Divider desktop with collapse toggle */}
         <div className="hidden md:flex flex-col items-center relative w-px bg-slate-800/60 h-full">
@@ -812,76 +818,17 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             </button>
         </div>
 
-        {/* FILE MANAGER PANEL */}
-        <div className={`h-full bg-slate-900/20 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${activeTab === 'files' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-full md:w-2/5 lg:w-1/3 opacity-100'}`}>
-          
-          <div className="p-4 md:p-6 border-b border-slate-800/60">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-slate-200">Files</h2>
-              <span className="text-xs text-slate-400 px-2 py-1 bg-slate-800 rounded-full">{files.length} items</span>
-            </div>
-            
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileUpload} 
-              className="hidden" 
-            />
-            
-            <div 
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              className="relative"
-            >
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className={`w-full py-4 border-2 border-dashed ${isDragOver ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-700/80 text-slate-400"} rounded-xl flex flex-col items-center justify-center gap-2 hover:bg-slate-800/30 hover:border-blue-500/50 hover:text-blue-400 transition-all overflow-hidden relative group`}
-              >
-                {uploading ? (
-                   <div className="absolute inset-0 bg-slate-800/80 flex flex-col items-center justify-center backdrop-blur-sm z-10">
-                     <Loader2 className="w-6 h-6 animate-spin text-blue-400 mb-2" />
-                     <div className="w-2/3 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                       <div className="h-full bg-blue-500 rounded-full" style={{ width: `${uploadProgress}%` }} />
-                     </div>
-                     <span className="text-xs mt-2 font-medium text-slate-300">{uploadProgress}%</span>
-                   </div>
-                ) : (
-                  <>
-                    <div className="p-3 bg-slate-800 rounded-full group-hover:scale-110 transition-transform">
-                      <UploadCloud className="w-5 h-5 text-slate-300" />
-                    </div>
-                    <span className="text-sm font-medium">Click or Drag to Upload (Max 50MB)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
-            {files.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-60">
-                <Cloud className="w-12 h-12 mb-3 grayscale" />
-                <p className="text-sm">No files uploaded yet</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <AnimatePresence>
-                  {files.map((f) => (
-                    <FileItem 
-                      key={f.id} 
-                      file={f} 
-                      handleDownload={handleDownloadFile} 
-                      handleDelete={handleDeleteFile} 
-                    />
-                  ))}
-                </AnimatePresence>
-              </div>
-            )}
-          </div>
-        </div>
-
+        <FileManagerPanel 
+          files={files}
+          uploading={uploading}
+          uploadProgress={uploadProgress}
+          activeTab={activeTab}
+          isFilePanelCollapsed={isFilePanelCollapsed}
+          processFile={processFile}
+          handleDownloadFile={handleDownloadFile}
+          handleDeleteFile={handleDeleteFile}
+          setIsFilePanelCollapsed={setIsFilePanelCollapsed}
+        />
       </main>
 
       <SessionFooter />

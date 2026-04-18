@@ -81,6 +81,18 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
 
+// --- STARTUP CLEANUP ---
+// Clean up any stray temp files from the uploads directory on startup
+try {
+  const files = fs.readdirSync(uploadDir);
+  for (const file of files) {
+    fs.unlinkSync(path.join(uploadDir, file));
+  }
+  console.log(`[STORAGE] Cleaned up ${files.length} stray temporary files.`);
+} catch (err) {
+  console.error("[STORAGE] Failed to clean uploads directory on startup:", err);
+}
+
 // --- API ROUTES ---
 
 // Root route for connection test
@@ -99,13 +111,15 @@ app.route("/session/:sessionId")
       const activeKey = `session:${sessionId}:active`;
       const textKey = `session:${sessionId}:text`;
       const filesKey = `session:${sessionId}:files`;
+      const lastActiveKey = `session:${sessionId}:last_active`;
 
-      const [isActive, text, filesCount, isPurged] = await Promise.all([
-        redis.exists(activeKey),
-        redis.get(textKey),
-        redis.llen(filesKey),
-        redis.get(`session:${sessionId}:purged_empty`)
-      ]);
+      // Optimized: Use pipeline for initial check
+      const [[, isActive], [, text], [, filesCount], [, isPurged]] = await redis.pipeline()
+        .exists(activeKey)
+        .get(textKey)
+        .llen(filesKey)
+        .get(`session:${sessionId}:purged_empty`)
+        .exec();
 
       if (!isActive && text === null && filesCount === 0) {
         if (isPurged) {
@@ -115,34 +129,35 @@ app.route("/session/:sessionId")
       }
 
       const filesRaw = await redis.lrange(filesKey, 0, -1);
-      const files = await Promise.all(
-        filesRaw.map(async (f) => {
-          const file = JSON.parse(f);
-          // Add signed preview URL for images
-          if (file.mimeType && file.mimeType.startsWith("image/")) {
-            try {
-              const command = new GetObjectCommand({
-                Bucket: S3_BUCKET_NAME,
-                Key: file.s3Key,
-              });
-              file.previewUrl = await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1 hr expiry
-            } catch (err) {
-              console.error("Preview URL generation failed", err);
+      
+      // Memory Optimization: Only generate URLs if client needs them or if files exist
+      const files = filesCount > 0 
+        ? await Promise.all(
+          filesRaw.map(async (f) => {
+            const file = JSON.parse(f);
+            // Add signed preview URL for images - only for small images or first few for performance
+            if (file.mimeType && file.mimeType.startsWith("image/")) {
+              try {
+                const command = new GetObjectCommand({
+                  Bucket: S3_BUCKET_NAME,
+                  Key: file.s3Key,
+                });
+                file.previewUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+              } catch (err) {
+                console.error("Preview URL generation failed", err);
+              }
             }
-          }
-          return file;
-        })
-      );
+            return file;
+          })
+        )
+        : [];
 
-      // Refresh activity and session tracking
-      await Promise.all([
-        redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
-        redis.sadd(ALL_SESSIONS_KEY, sessionId)
-      ]);
-
-      if (!isActive) {
-        await redis.set(activeKey, "1", "EX", 86400);
-      }
+      // Optimized: Use pipeline for refreshes
+      await redis.pipeline()
+        .set(lastActiveKey, Date.now().toString())
+        .sadd(ALL_SESSIONS_KEY, sessionId)
+        .set(activeKey, "1", "EX", 86400)
+        .exec();
 
       res.json({ text: text || "", files });
     } catch (e) {
@@ -360,14 +375,17 @@ io.on("connection", (socket) => {
     // Normalize line endings
     const normalized = content.replace(/\r\n/g, "\n");
 
-    // Save to Redis and refresh heartbeat
+    const textKey = `session:${sessionId}:text`;
     const activeKey = `session:${sessionId}:active`;
-    await Promise.all([
-      redis.set(textKey, normalized, "EX", 86400),
-      redis.expire(activeKey, 86400),
-      redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
-      redis.sadd(ALL_SESSIONS_KEY, sessionId)
-    ]);
+    const lastActiveKey = `session:${sessionId}:last_active`;
+
+    // Optimized: Use pipeline for updates
+    await redis.pipeline()
+      .set(textKey, normalized, "EX", 86400)
+      .expire(activeKey, 86400)
+      .set(lastActiveKey, Date.now().toString())
+      .sadd(ALL_SESSIONS_KEY, sessionId)
+      .exec();
 
     // Broadcast to other clients
     socket.to(sessionId).emit("text_updated", { content: normalized });

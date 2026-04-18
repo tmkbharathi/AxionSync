@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 // Dynamic imports for heavy components
 const Background3D = dynamic(() => import("@/components/Background3D").then(mod => mod.Background3D), { 
@@ -222,6 +223,7 @@ const SessionHeader = memo(({
                   onClick={() => setShowDevicesModal(true)}
                   className="p-0.5 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-blue-400"
                   title="View Device List"
+                  aria-label="View Connected Device List"
                 >
                   <Info className="w-3.5 h-3.5" />
                 </button>
@@ -236,6 +238,7 @@ const SessionHeader = memo(({
           onClick={() => setShowQr(true)}
           className="p-2 hover:bg-slate-700 rounded-md transition-colors text-slate-300 hover:text-white"
           title="Show QR Code"
+          aria-label="Display Session QR Code"
         >
           <QrCode className="w-4 h-4" />
         </button>
@@ -262,6 +265,7 @@ const SessionHeader = memo(({
           onClick={handleDeleteSession}
           className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-md transition-colors flex items-center gap-2"
           title="Delete Session"
+          aria-label="Wipe and Delete Entire Session"
         >
           <Trash2 className="w-4 h-4" />
           <span className="hidden sm:inline text-xs font-medium">Delete</span>
@@ -426,6 +430,7 @@ const ClipboardPanel = memo(({
       </div>
       <div className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all shadow-inner">
         <textarea
+          id="main-content"
           value={text}
           onChange={handleTextChange}
           placeholder="Type or paste text here... It will sync instantly."
@@ -549,6 +554,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [showDevicesModal, setShowDevicesModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isFilePanelCollapsed, setIsFilePanelCollapsed] = useState(false);
+
+  const devicesModalRef = useFocusTrap(showDevicesModal);
+  const qrModalRef = useFocusTrap(showQr);
+  const deleteModalRef = useFocusTrap(showDeleteModal);
+  const sessionErrorRef = useFocusTrap(!!sessionError);
 
   const hasAutoAttempted = useRef(false);
 
@@ -715,6 +725,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none" />
         
         <motion.div 
+          ref={sessionErrorRef}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="max-w-md w-full bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl shadow-2xl relative z-10 text-center"
@@ -840,10 +851,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-lg flex items-center justify-center p-4"
             onClick={() => setShowDevicesModal(false)}
           >
             <motion.div
+              ref={devicesModalRef}
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -887,10 +899,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-lg flex items-center justify-center p-4"
             onClick={() => setShowQr(false)}
           >
             <motion.div
+              ref={qrModalRef}
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -937,9 +950,10 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowDeleteModal(false)}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+              className="absolute inset-0 bg-slate-950/90 backdrop-blur-lg"
             />
             <motion.div 
+              ref={deleteModalRef}
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}

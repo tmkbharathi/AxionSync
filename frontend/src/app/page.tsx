@@ -12,6 +12,7 @@ import { Points, PointMaterial } from "@react-three/drei";
 import * as THREE from "three";
 import { siteConfig } from "@/config/site";
 import { Background3D } from "@/components/Background3D";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -27,6 +28,8 @@ function Home() {
   const [joinKey, setJoinKey] = useState("");
   const [showThankYou, setShowThankYou] = useState(false);
   const [isDeletedByOther, setIsDeletedByOther] = useState(false);
+
+  const thankYouModalRef = useFocusTrap(showThankYou);
 
   useEffect(() => {
     if (searchParams.get("status") === "deleted") {
@@ -167,6 +170,7 @@ function Home() {
             <form onSubmit={handleJoin} className="relative w-full">
 
               <input
+                id="main-content"
                 type="text"
                 placeholder="session key"
                 maxLength={8}
@@ -254,10 +258,11 @@ function Home() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-lg"
             onClick={() => setShowThankYou(false)}
           >
             <motion.div
+              ref={thankYouModalRef}
               initial={{ scale: 0.9, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, y: 20, opacity: 0 }}

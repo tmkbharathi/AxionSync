@@ -4,6 +4,8 @@ import "./globals.css";
 import { siteConfig } from "@/config/site";
 import CustomCursor from "@/components/CustomCursor";
 
+import SkipLink from "@/components/SkipLink";
+
 const outfit = Outfit({ 
   subsets: ["latin"],
   variable: "--font-outfit",
@@ -22,6 +24,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${outfit.className} bg-slate-950 text-slate-50 antialiased`}>
+        <SkipLink />
         <CustomCursor />
         {children}
       </body>

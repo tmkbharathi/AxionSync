@@ -12,6 +12,7 @@ import { Points, PointMaterial } from "@react-three/drei";
 import * as THREE from "three";
 import { siteConfig } from "@/config/site";
 import { Background3D } from "@/components/Background3D";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -27,6 +28,8 @@ function Home() {
   const [joinKey, setJoinKey] = useState("");
   const [showThankYou, setShowThankYou] = useState(false);
   const [isDeletedByOther, setIsDeletedByOther] = useState(false);
+
+  const thankYouModalRef = useFocusTrap(showThankYou);
 
   useEffect(() => {
     if (searchParams.get("status") === "deleted") {
@@ -134,12 +137,12 @@ function Home() {
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
-          animate={{ 
-            opacity: 1, 
+          animate={{
+            opacity: 1,
             y: 0,
-            x: joinError ? [-5, 5, -5, 5, 0] : 0 
+            x: joinError ? [-5, 5, -5, 5, 0] : 0
           }}
-          transition={{ 
+          transition={{
             opacity: { duration: 0.8, delay: 0.2 },
             y: { duration: 0.8, delay: 0.2 },
             x: { duration: 0.4 }
@@ -167,6 +170,7 @@ function Home() {
             <form onSubmit={handleJoin} className="relative w-full">
 
               <input
+                id="main-content"
                 type="text"
                 placeholder="session key"
                 maxLength={8}
@@ -176,8 +180,8 @@ function Home() {
                   if (joinError) setJoinError(null);
                 }}
                 className={`w-full py-4 bg-transparent border-2 ${joinError ? "border-red-500/50" : "border-transparent focus:border-blue-500/20"
-                  } rounded-2xl outline-none transition-all font-mono tracking-widest uppercase placeholder:font-sans placeholder:tracking-normal placeholder:lowercase placeholder:text-sm placeholder:text-center ${joinError ? "placeholder:text-red-400" : "placeholder:text-slate-600"
-                  } ${joinKey.length > 0 ? "text-left pl-2 pr-24" : "text-center px-4"
+                  } rounded-2xl transition-all font-mono tracking-widest uppercase placeholder:font-sans placeholder:tracking-normal placeholder:lowercase placeholder:text-sm placeholder:text-center ${joinError ? "placeholder:text-red-400" : "placeholder:text-slate-600"
+                  } text-center ${joinKey.length > 0 ? "pr-26" : "px-4"
                   }`}
               />
               <AnimatePresence>
@@ -241,7 +245,7 @@ function Home() {
           <FeatureCard
             icon={<Shield className="w-6 h-6 text-indigo-400" />}
             title="Auto Cleanup"
-            desc="Files and text auto-destruct after 12 hours of inactivity."
+            desc="Files and text auto-destruct after 24 hours of inactivity."
           />
         </motion.div>
 
@@ -254,10 +258,11 @@ function Home() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-lg"
             onClick={() => setShowThankYou(false)}
           >
             <motion.div
+              ref={thankYouModalRef}
               initial={{ scale: 0.9, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, y: 20, opacity: 0 }}

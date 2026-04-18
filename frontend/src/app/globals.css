@@ -2,6 +2,7 @@
 
 @theme {
   --font-sans: var(--font-outfit), "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --breakpoint-xs: 480px;
 }
 
 :root {
@@ -27,13 +28,52 @@ html, body {
     }
   }
 
-  /* Deep reset for focus rings to ensure a clean premium look */
-  *:focus, 
-  *:focus-visible {
-    outline: none !important;
-    box-shadow: none !important;
+  /* Premium custom focus rings - ONLY for active keyboard users */
+  .user-is-tabbing *:focus {
+    outline: 2px solid #22d3ee !important; /* cyan-400 */
+    outline-offset: 2px !important;
+    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.2) !important;
+    border-radius: inherit;
+  }
+
+  /* Standard focus state (hides default browser rings for mouse/everything else) */
+  *:focus {
+    outline: none;
+  }
+
+  /* Screen Reader Only Utility */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  /* Skip Link Styles */
+  .skip-link {
+    position: absolute;
+    top: -100px;
+    left: 20px;
+    background: #2563eb; /* blue-600 */
+    color: white;
+    padding: 10px 20px;
+    z-index: 100;
+    font-weight: bold;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    transition: top 0.3s ease;
+    text-decoration: none;
+  }
+  .skip-link:focus {
+    top: 0;
   }
 }
+
 
 @media (any-pointer: fine) {
   html {
@@ -50,25 +90,25 @@ html, body {
   }
 }
 
-  /* Premium Global Dark Scrollbar */
+  /* Minimalist Transparent Scrollbar */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 5px;
+    height: 5px;
   }
   ::-webkit-scrollbar-track {
-    background: #020617; /* Root slate-950 */
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #1e293b; /* slate-800 */
+    background: rgba(255, 255, 255, 0.2);
     border-radius: 20px;
-    border: 2px solid #020617;
+    transition: background 0.3s ease;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #334155; /* slate-700 */
+    background: rgba(255, 255, 255, 0.4);
   }
 
   /* Firefox Support */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #1e293b #020617;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
   }

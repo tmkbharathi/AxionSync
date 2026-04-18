@@ -35,16 +35,24 @@ export default function CustomCursor() {
   useEffect(() => {
     if (!hasFinePointer) return;
 
-    const moveMouse = (e: MouseEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Tab") {
+        document.body.classList.add("user-is-tabbing");
+      }
+    };
+
+    const handleMouseDown = () => {
+      document.body.classList.remove("user-is-tabbing");
+    };
+
+    const updateCursorState = (e: MouseEvent) => {
       mouseX.set(e.clientX);
       mouseY.set(e.clientY);
       
       if (!isVisible) setIsVisible(true);
 
-      // Real-time target detection: robust for dynamic pages and navigation
       const target = e.target as HTMLElement;
       if (target) {
-        // 1. Check if we're over a text input or textarea
         const isInput = 
           target.tagName === "INPUT" || 
           target.tagName === "TEXTAREA" || 
@@ -53,7 +61,6 @@ export default function CustomCursor() {
         
         setIsHoveringInput(!!isInput);
 
-        // 2. Check if we're over a clickable element (only if not an input)
         if (!isInput) {
           const isClickable = 
             target.tagName === "A" || 
@@ -71,15 +78,27 @@ export default function CustomCursor() {
 
     const handleMouseLeave = () => setIsVisible(false);
     const handleMouseEnter = () => setIsVisible(true);
+    const handleBlur = () => setIsVisible(false);
+    const handleFocus = () => {};
 
-    window.addEventListener("mousemove", moveMouse);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mousemove", updateCursorState);
+    window.addEventListener("mousedown", updateCursorState);
     document.addEventListener("mouseleave", handleMouseLeave);
     document.addEventListener("mouseenter", handleMouseEnter);
+    window.addEventListener("blur", handleBlur);
+    window.addEventListener("focus", handleFocus);
 
     return () => {
-      window.removeEventListener("mousemove", moveMouse);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mousemove", updateCursorState);
+      window.removeEventListener("mousedown", updateCursorState);
       document.removeEventListener("mouseleave", handleMouseLeave);
       document.removeEventListener("mouseenter", handleMouseEnter);
+      window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("focus", handleFocus);
     };
   }, [mouseX, mouseY, isVisible, hasFinePointer]);
 

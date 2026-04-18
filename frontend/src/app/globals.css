@@ -28,12 +28,17 @@ html, body {
     }
   }
 
-  /* Premium custom focus rings for keyboard navigation */
-  *:focus-visible {
+  /* Premium custom focus rings - ONLY for active keyboard users */
+  .user-is-tabbing *:focus {
     outline: 2px solid #22d3ee !important; /* cyan-400 */
     outline-offset: 2px !important;
     box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.2) !important;
     border-radius: inherit;
+  }
+
+  /* Standard focus state (hides default browser rings for mouse/everything else) */
+  *:focus {
+    outline: none;
   }
 
   /* Screen Reader Only Utility */

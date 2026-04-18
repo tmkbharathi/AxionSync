@@ -180,7 +180,7 @@ function Home() {
                   if (joinError) setJoinError(null);
                 }}
                 className={`w-full py-4 bg-transparent border-2 ${joinError ? "border-red-500/50" : "border-transparent focus:border-blue-500/20"
-                  } rounded-2xl outline-none transition-all font-mono tracking-widest uppercase placeholder:font-sans placeholder:tracking-normal placeholder:lowercase placeholder:text-sm placeholder:text-center ${joinError ? "placeholder:text-red-400" : "placeholder:text-slate-600"
+                  } rounded-2xl transition-all font-mono tracking-widest uppercase placeholder:font-sans placeholder:tracking-normal placeholder:lowercase placeholder:text-sm placeholder:text-center ${joinError ? "placeholder:text-red-400" : "placeholder:text-slate-600"
                   } text-center ${joinKey.length > 0 ? "pr-26" : "px-4"
                   }`}
               />

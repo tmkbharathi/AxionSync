@@ -12,7 +12,7 @@ import {
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
   Info, Monitor, Tablet, Globe, Share2,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
-  ChevronsRight, ChevronsLeft, AlertTriangle
+  ChevronsRight, ChevronsLeft, AlertTriangle, Plus, Minus
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
@@ -306,6 +306,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [showDevicesModal, setShowDevicesModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isFilePanelCollapsed, setIsFilePanelCollapsed] = useState(false);
+  const [fontSize, setFontSize] = useState(14);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef(text);
@@ -752,13 +753,33 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
               >
                 {isListening ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
               </button>
+
+              <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5">
+                <button 
+                  onClick={() => setFontSize(prev => Math.max(10, prev - 2))}
+                  className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"
+                  title="Zoom Out"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+                <button 
+                  onClick={() => setFontSize(prev => Math.min(48, prev + 2))}
+                  className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"
+                  title="Zoom In"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
             <button 
               onClick={handleCopyText}
-              className="px-3 py-1.5 text-xs font-medium rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center gap-2 border border-slate-700"
+              className="p-1.5 sm:px-3 sm:py-1.5 text-xs font-medium rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-700"
             >
               {copiedText ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              {copiedText ? 'Copied!' : 'Copy All'}
+              <span className="hidden sm:inline">
+                {copiedText ? 'Copied!' : 'Copy All'}
+              </span>
             </button>
           </div>
           
@@ -767,8 +788,8 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
               value={text}
               onChange={handleTextChange}
               placeholder="Type or paste text here... It will sync instantly."
-              style={{ scrollbarGutter: 'stable' }}
-              className="w-full h-full p-3 bg-transparent resize-none outline-none text-slate-200 placeholder:text-slate-600 font-mono text-sm leading-relaxed"
+              style={{ scrollbarGutter: 'stable', fontSize: `${fontSize}px` }}
+              className="w-full h-full p-3 bg-transparent resize-none outline-none text-slate-200 placeholder:text-slate-600 font-mono leading-relaxed"
             />
           </div>
 

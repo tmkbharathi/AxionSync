@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { Copy, ArrowRight, Cloud, Shield, Zap, CheckCircle2, Heart, Lock, ShieldCheck, Star, Crown, ChevronDown } from "lucide-react";
+import { Copy, ArrowRight, Cloud, Shield, Zap, CheckCircle2, Heart, Lock, Unlock, ShieldCheck, Star, Crown, ChevronDown, Eye, EyeOff, X } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import { useState, useRef, useMemo, useEffect, memo } from "react";
@@ -38,6 +38,25 @@ function Home() {
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState(false);
   const [isProHovered, setIsProHovered] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleCloseAdminModal = () => {
+    setShowAdminModal(false);
+    setAdminPassword("");
+    setJoinKey("");
+    setShowPassword(false);
+    setAdminError(false);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && showAdminModal) {
+        handleCloseAdminModal();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showAdminModal]);
 
   const thankYouModalRef = useFocusTrap(showThankYou);
 
@@ -254,6 +273,8 @@ function Home() {
                 placeholder="session key"
                 maxLength={8}
                 value={joinKey}
+                autoComplete="off"
+                spellCheck="false"
                 onChange={(e) => {
                   setJoinKey(e.target.value);
                   if (joinError) setJoinError(null);
@@ -411,9 +432,38 @@ function Home() {
               className="max-w-sm w-full bg-slate-900/60 border border-slate-700 p-8 rounded-[2rem] text-center relative shadow-2xl"
               onClick={e => e.stopPropagation()}
             >
-              <div className="w-16 h-16 bg-blue-600/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <Lock className="w-8 h-8 text-blue-400" />
-              </div>
+              <button
+                onClick={handleCloseAdminModal}
+                className="absolute top-6 right-6 p-2 text-slate-500 hover:text-white hover:bg-slate-800/50 rounded-full transition-all"
+                aria-label="Close modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <motion.div 
+                animate={{ 
+                  backgroundColor: adminPassword === ADMIN_PASSWORD ? "rgba(16, 185, 129, 0.15)" : "rgba(37, 99, 235, 0.15)",
+                  borderColor: adminPassword === ADMIN_PASSWORD ? "rgba(16, 185, 129, 0.3)" : "rgba(37, 99, 235, 0.3)"
+                }}
+                className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-transparent transition-colors relative"
+              >
+                <AnimatePresence initial={false}>
+                  <motion.div
+                    key={adminPassword === ADMIN_PASSWORD ? 'unlocked' : 'locked'}
+                    initial={{ scale: 0.8, opacity: 0, rotate: -15 }}
+                    animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                    exit={{ scale: 0.8, opacity: 0, rotate: 15 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 28 }}
+                    className="absolute inset-0 flex items-center justify-center"
+                  >
+                    {adminPassword === ADMIN_PASSWORD ? (
+                      <Unlock className="w-8 h-8 text-emerald-400" />
+                    ) : (
+                      <Lock className="w-8 h-8 text-blue-400" />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </motion.div>
 
               <h2 className="text-xl font-bold mb-2">Reserved Session</h2>
               <p className="text-slate-400 text-xs mb-6 uppercase tracking-widest font-bold">Session ID: {ADMIN_SESSION_ID}</p>
@@ -429,14 +479,23 @@ function Home() {
                   setTimeout(() => setAdminError(false), 2000);
                 }
               }}>
-                <input
-                  type="password"
-                  autoFocus
-                  placeholder="Enter Password"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  className={`w-full py-3 px-4 bg-slate-800 border-2 ${adminError ? 'border-rose-500/50' : 'border-slate-700 focus:border-blue-500/50'} rounded-xl text-center outline-none transition-all placeholder:text-slate-600 mb-4`}
-                />
+                <div className="relative mb-4">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    autoFocus
+                    placeholder="Enter Password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    className={`w-full py-3 px-12 bg-slate-800 border-2 ${adminError ? 'border-rose-500/50' : 'border-slate-700 focus:border-blue-500/50'} rounded-xl text-center outline-none transition-all placeholder:text-slate-600`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
 
                 <div className="flex flex-col gap-3">
                   <button
@@ -444,16 +503,6 @@ function Home() {
                     className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
                   >
                     Unlock Session
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAdminModal(false);
-                      setAdminPassword("");
-                    }}
-                    className="w-full py-3 bg-transparent hover:bg-slate-800/50 text-slate-400 rounded-xl font-medium text-sm transition-all"
-                  >
-                    Cancel
                   </button>
                 </div>
               </form>

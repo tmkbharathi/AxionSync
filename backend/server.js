@@ -186,16 +186,13 @@ app.route("/session/:sessionId")
       const filesRaw = await redis.lrange(filesKey, 0, -1);
       const files = filesRaw.map(f => JSON.parse(f));
 
-      for (const file of files) {
-        try {
-          await s3.send(new DeleteObjectCommand({
-            Bucket: S3_BUCKET_NAME,
-            Key: file.s3Key
-          }));
-        } catch (err) {
-          console.error(`Failed to delete file ${file.s3Key} from S3:`, err);
-        }
-      }
+      // Optimized: Delete from S3 in parallel
+      await Promise.all(files.map(file => 
+        s3.send(new DeleteObjectCommand({
+          Bucket: S3_BUCKET_NAME,
+          Key: file.s3Key
+        })).catch(err => console.error(`Failed to delete file ${file.s3Key} from S3:`, err))
+      ));
 
       // 2. Delete all keys from Redis
       await redis.del(activeKey, textKey, filesKey, `session:${sessionId}:last_active`, `session:${sessionId}:purged_empty`);
@@ -229,9 +226,14 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "Session file limit (20) reached. Please delete old files." });
     }
 
-    // 2. Hash check for duplicate uploads (Calculate from disk)
-    const fileBuffer = fs.readFileSync(file.path);
-    const fileHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+    // 2. Hash check for duplicate uploads (Calculate from disk using streams for memory efficiency)
+    const fileHash = await new Promise((resolve, reject) => {
+      const hash = crypto.createHash("sha256");
+      const stream = fs.createReadStream(file.path);
+      stream.on("data", (data) => hash.update(data));
+      stream.on("end", () => resolve(hash.digest("hex")));
+      stream.on("error", (err) => reject(err));
+    });
     
     const existingFilesRaw = await redis.lrange(filesKey, 0, -1);
     const existingFiles = existingFilesRaw.map(f => JSON.parse(f));
@@ -502,50 +504,56 @@ cron.schedule("0 * * * *", async () => {
     const oneHourAgo = Date.now() - 3600 * 1000;
     const sessionIds = await redis.smembers(ALL_SESSIONS_KEY);
 
+    // Optimized: Use pipeline to fetch all required data at once
+    const pipeline = redis.pipeline();
+    sessionIds.forEach(id => {
+      if (id !== process.env.ADMIN_SESSION_ID) {
+        pipeline.exists(`session:${id}:active`);
+        pipeline.get(`session:${id}:text`);
+        pipeline.llen(`session:${id}:files`);
+        pipeline.get(`session:${id}:last_active`);
+      }
+    });
+
+    const results = await pipeline.exec();
+    const cleanupPipeline = redis.pipeline();
+
+    let resultIndex = 0;
     for (const sessionId of sessionIds) {
-      try {
-        const activeKey = `session:${sessionId}:active`;
-        const textKey = `session:${sessionId}:text`;
-        const filesKey = `session:${sessionId}:files`;
-        const lastActiveKey = `session:${sessionId}:last_active`;
+      if (sessionId === process.env.ADMIN_SESSION_ID) continue;
 
-        // Skip Reserved sessions from cleanup
-        if (sessionId === process.env.ADMIN_SESSION_ID) continue;
+      const [err1, isActive] = results[resultIndex++];
+      const [err2, text] = results[resultIndex++];
+      const [err3, filesCount] = results[resultIndex++];
+      const [err4, lastActive] = results[resultIndex++];
 
-        const [isActive, text, filesCount, lastActive] = await Promise.all([
-          redis.exists(activeKey),
-          redis.get(textKey),
-          redis.llen(filesKey),
-          redis.get(lastActiveKey)
-        ]);
+      if (err1 || err2 || err3 || err4) continue;
 
-        // If session keys don't exist anymore, remove from tracking set
-        if (!isActive && text === null && filesCount === 0) {
-          await redis.srem(ALL_SESSIONS_KEY, sessionId);
-          continue;
-        }
+      // If session keys don't exist anymore, remove from tracking set
+      if (!isActive && text === null && filesCount === 0) {
+        cleanupPipeline.srem(ALL_SESSIONS_KEY, sessionId);
+        continue;
+      }
 
-        // Logic for empty session cleanup
-        const isEmpty = (!text || text.trim() === "") && filesCount === 0;
-        const lastActiveTs = lastActive ? parseInt(lastActive) : 0;
+      // Logic for empty session cleanup
+      const isEmpty = (!text || text.trim() === "") && filesCount === 0;
+      const lastActiveTs = lastActive ? parseInt(lastActive) : 0;
 
-        if (isEmpty && lastActiveTs < oneHourAgo) {
-          console.log(`[CLEANUP] Deleting empty session: ${sessionId}`);
-          
-          // Set "purged" marker for 24 hours
-          await redis.set(`session:${sessionId}:purged_empty`, "1", "EX", 86400);
-          
-          // Delete all data
-          await redis.del(activeKey, textKey, filesKey, lastActiveKey);
-          await redis.srem(ALL_SESSIONS_KEY, sessionId);
-          
-          // Notify clients
-          io.to(sessionId).emit("session_deleted");
-        }
-      } catch (err) {
-        console.error(`Error during session cleanup for ${sessionId}:`, err);
+      if (isEmpty && lastActiveTs < oneHourAgo) {
+        console.log(`[CLEANUP] Deleting empty session: ${sessionId}`);
+        
+        // Set "purged" marker for 24 hours
+        cleanupPipeline.set(`session:${sessionId}:purged_empty`, "1", "EX", 86400);
+        
+        // Delete all data
+        cleanupPipeline.del(`session:${sessionId}:active`, `session:${sessionId}:text`, `session:${sessionId}:files`, `session:${sessionId}:last_active`);
+        cleanupPipeline.srem(ALL_SESSIONS_KEY, sessionId);
+        
+        // Notify clients
+        io.to(sessionId).emit("session_deleted");
       }
     }
+    await cleanupPipeline.exec();
     console.log("Session inactivity cleanup finished.");
   } catch (err) {
     console.error("Cleanup job error:", err);

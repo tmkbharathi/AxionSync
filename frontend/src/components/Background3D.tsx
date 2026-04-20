@@ -23,9 +23,11 @@ const StarBackground = memo(function StarBackground({ isStatic, ...props }: any)
   }, []);
 
   const sphere = useMemo(() => {
-    // Generate 5000 random points within a sphere of radius 1.2
-    const positions = new Float32Array(5000 * 3);
-    for (let i = 0; i < 5000; i++) {
+    const count = 5000;
+    
+    // Generate random points within a sphere of radius 1.2
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
       const u = Math.random();
       const v = Math.random();
       const theta = 2 * Math.PI * u;

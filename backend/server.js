@@ -121,11 +121,18 @@ app.route("/session/:sessionId")
         .get(`session:${sessionId}:purged_empty`)
         .exec();
 
+      const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
       if (!isActive && text === null && filesCount === 0) {
-        if (isPurged) {
-          return res.status(410).json({ error: "purged_due_to_inactivity" });
+        if (isAdminSession) {
+          // Special Case: Always allow the admin session to appear "alive"
+          await redis.set(activeKey, "1", "EX", 86400 * 365); // 1 year expiry
+        } else {
+          if (isPurged) {
+            return res.status(410).json({ error: "purged_due_to_inactivity" });
+          }
+          return res.status(404).json({ error: "Session not found or expired" });
         }
-        return res.status(404).json({ error: "Session not found or expired" });
       }
 
       const filesRaw = await redis.lrange(filesKey, 0, -1);
@@ -501,6 +508,9 @@ cron.schedule("0 * * * *", async () => {
         const textKey = `session:${sessionId}:text`;
         const filesKey = `session:${sessionId}:files`;
         const lastActiveKey = `session:${sessionId}:last_active`;
+
+        // Skip Reserved sessions from cleanup
+        if (sessionId === process.env.ADMIN_SESSION_ID) continue;
 
         const [isActive, text, filesCount, lastActive] = await Promise.all([
           redis.exists(activeKey),

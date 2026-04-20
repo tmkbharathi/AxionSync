@@ -1,7 +1,7 @@
 export const siteConfig = {
   name: "AxionSync",
   slug: "axionsync",
-  version: "0.0.8",
+  version: "0.0.9",
   tagline: "Instant Data Sync",
   description: "Sync your clipboard and files instantly across all devices. No login required.",
   links: {

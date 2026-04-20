@@ -591,10 +591,16 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           handleActivateSession();
           return;
         }
-        if (err.response?.status === 410) setSessionError("purged");
-        else if (err.response?.status === 404) setSessionError(cachedText ? "expired" : "not_found");
-        else setSessionError("not_found");
-        setIsValidating(false);
+        
+        // Always redirect to main page for deleted/purged/missing rooms as requested
+        if (err.response?.status === 410) {
+          router.replace("/?status=not_found&origin=purged");
+        } else if (err.response?.status === 404) {
+          router.replace(`/?status=not_found&origin=missing&id=${sessionId}`);
+        } else {
+          setSessionError("not_found");
+          setIsValidating(false);
+        }
       });
 
     const newSocket = io(SOCKET_URL, { transports: ["websocket"] });
@@ -678,6 +684,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     setShowDeleteModal(false);
     try {
       await axios.delete(`${API_URL}/session/${sessionId}`);
+      localStorage.removeItem(`${siteConfig.slug}:text:${sessionId}`);
       router.push("/?status=deleted&origin=self");
     } catch (err) {
       alert("Failed to delete session");

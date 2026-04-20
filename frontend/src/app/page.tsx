@@ -28,13 +28,17 @@ function Home() {
   const [joinKey, setJoinKey] = useState("");
   const [showThankYou, setShowThankYou] = useState(false);
   const [isDeletedByOther, setIsDeletedByOther] = useState(false);
+  const [isNotFound, setIsNotFound] = useState(false);
 
   const thankYouModalRef = useFocusTrap(showThankYou);
 
   useEffect(() => {
-    if (searchParams.get("status") === "deleted") {
+    const status = searchParams.get("status");
+    if (status === "deleted" || status === "not_found") {
       setShowThankYou(true);
       setIsDeletedByOther(searchParams.get("origin") === "other");
+      setIsNotFound(status === "not_found");
+      
       // Clean up the URL
       window.history.replaceState({}, '', '/');
 
@@ -56,8 +60,6 @@ function Home() {
       // Fallback: still redirect to the SAME sessionId. 
       // The session page will detect it's not initialized and offer a "Start This Room" button.
       router.push(`/${sessionId}`);
-    } finally {
-      setIsGenerating(false);
     }
   };
 
@@ -282,16 +284,22 @@ function Home() {
               </motion.div>
 
               <h2 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
-                {isDeletedByOther ? 'Session Ended' : 'Room Peacefully Closed'}
+                {isNotFound ? 'Room Not Found' : 
+                 isDeletedByOther ? 'Session Ended' : 'Room Peacefully Closed'}
               </h2>
 
               <p className="text-slate-300 text-lg mb-8 leading-relaxed italic font-medium pt-2 border-t border-slate-800">
-                "May your files find their home and your mind find its peace."
+                {isNotFound 
+                  ? '"The digital trail ends here. This space is no longer active."'
+                  : '"May your files find their home and your mind find its peace."'
+                }
               </p>
 
               <div className="flex flex-col gap-4">
                 <p className="text-slate-500 text-sm">
-                  {isDeletedByOther
+                  {isNotFound
+                    ? "The session you tried to join doesn't exist or has been permanently removed from our memory."
+                    : isDeletedByOther
                     ? "A participant has closed this room and securely wiped all shared data."
                     : "The session has been completely wiped from our systems. Thank you for trusting AxionSync with your temporary workspace."}
                 </p>

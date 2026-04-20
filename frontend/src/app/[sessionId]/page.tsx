@@ -12,7 +12,7 @@ import {
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
   Info, Monitor, Tablet, Globe, Share2,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
-  ChevronsRight, ChevronsLeft, AlertTriangle, Plus, Minus
+  ChevronsRight, ChevronsLeft, AlertTriangle, Plus, Minus, Lock, LogOut
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
@@ -27,6 +27,10 @@ const QRCodeSVG = dynamic(() => import("qrcode.react").then(mod => mod.QRCodeSVG
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+// Admin Credentials
+const ADMIN_SESSION_ID = process.env.NEXT_PUBLIC_ADMIN_SESSION_ID;
+const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
 
 interface FileMeta {
   id: string;
@@ -193,7 +197,8 @@ const SessionHeader = memo(({
   setShowQr, 
   handleCopyLink, 
   copiedLink,
-  handleDeleteSession
+  handleDeleteSession,
+  isPro
 }: { 
   connected: boolean, 
   roomSize: number, 
@@ -202,7 +207,8 @@ const SessionHeader = memo(({
   setShowQr: (v: boolean) => void, 
   handleCopyLink: () => void, 
   copiedLink: boolean,
-  handleDeleteSession: () => void
+  handleDeleteSession: () => void,
+  isPro: boolean
 }) => {
   return (
     <header className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-800/60 bg-slate-900/40 backdrop-blur-md z-10">
@@ -263,12 +269,12 @@ const SessionHeader = memo(({
         
         <button 
           onClick={handleDeleteSession}
-          className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-md transition-colors flex items-center gap-2"
-          title="Delete Session"
-          aria-label="Wipe and Delete Entire Session"
+          className={`p-2 rounded-md transition-colors flex items-center gap-2 ${isPro ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400' : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400'}`}
+          title={isPro ? "Logout Session" : "Delete Session"}
+          aria-label={isPro ? "Logout from this session" : "Wipe and Delete Entire Session"}
         >
-          <Trash2 className="w-4 h-4" />
-          <span className="hidden sm:inline text-xs font-medium">Delete</span>
+          {isPro ? <LogOut className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
+          <span className="hidden sm:inline text-xs font-medium">{isPro ? "Logout" : "Delete"}</span>
         </button>
       </div>
     </header>
@@ -562,6 +568,24 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
   const hasAutoAttempted = useRef(false);
 
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => {
+    if (typeof window === "undefined") return false;
+    if (sessionId !== ADMIN_SESSION_ID) return true;
+    return sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`) === "true";
+  });
+  const [adminPasswordValue, setAdminPasswordValue] = useState("");
+  const [adminAuthError, setAdminAuthError] = useState(false);
+
+  // Sync state if sessionId changes (though sessionId is usually static in this route)
+  useEffect(() => {
+    if (sessionId === ADMIN_SESSION_ID) {
+      const isAuth = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`) === "true";
+      setIsAdminUnlocked(isAuth);
+    } else {
+      setIsAdminUnlocked(true);
+    }
+  }, [sessionId]);
+
   const handleActivateSession = useCallback(async () => {
     setIsActivating(true);
     try {
@@ -575,6 +599,8 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   }, [sessionId]);
 
   useEffect(() => {
+    if (!isAdminUnlocked) return; // Wait for password if it's the admin session
+
     const cachedText = localStorage.getItem(`${siteConfig.slug}:text:${sessionId}`);
     if (cachedText) setText(cachedText);
 
@@ -621,7 +647,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     });
 
     return () => { newSocket.disconnect(); };
-  }, [sessionId, handleActivateSession, router]);
+  }, [sessionId, handleActivateSession, router, isAdminUnlocked]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -688,8 +714,14 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   }, [sessionId, router]);
 
   const handleDeleteSession = useCallback(() => {
-    setShowDeleteModal(true);
-  }, []);
+    if (sessionId === ADMIN_SESSION_ID) {
+      // Just logout for Pro sessions
+      sessionStorage.removeItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
+      router.push("/");
+    } else {
+      setShowDeleteModal(true);
+    }
+  }, [sessionId, router]);
 
 
 
@@ -697,7 +729,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
 
 
-  if (isValidating) {
+  if (isValidating && isAdminUnlocked) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
         <motion.div 
@@ -715,6 +747,64 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             <h2 className="text-xl font-bold mb-2">Securing Connection</h2>
             <p className="text-slate-400 text-sm">Verifying AxionSync instance...</p>
           </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Admin Unlock Overlay
+  if (!isAdminUnlocked) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
+        {/* Ambient background glows */}
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none" />
+
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          className="max-w-sm w-full bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-10 rounded-[2.5rem] shadow-2xl relative z-10 text-center"
+        >
+          <div className="w-20 h-20 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-xl border border-slate-700">
+             <Lock className="w-10 h-10 text-blue-400 opacity-80" />
+          </div>
+          
+          <h1 className="text-2xl font-bold mb-2">Reserved Admin Space</h1>
+          <p className="text-slate-500 text-xs mb-8 uppercase tracking-widest font-bold">Encrypted Session: {ADMIN_SESSION_ID}</p>
+          
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (adminPasswordValue === ADMIN_PASSWORD) {
+              sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, "true");
+              setIsAdminUnlocked(true);
+            } else {
+              setAdminAuthError(true);
+              setTimeout(() => setAdminAuthError(false), 2000);
+            }
+          }}>
+            <input
+              type="password"
+              autoFocus
+              placeholder="Enter Password"
+              value={adminPasswordValue}
+              onChange={(e) => setAdminPasswordValue(e.target.value)}
+              className={`w-full py-4 px-4 bg-slate-900/50 border-2 ${adminAuthError ? 'border-rose-500/50' : 'border-slate-800 focus:border-blue-500/50'} rounded-2xl text-center outline-none transition-all placeholder:text-slate-700 mb-6 font-mono tracking-widest`}
+            />
+            
+            <button
+              type="submit"
+              className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-500/20 active:scale-95"
+            >
+              Verify Identity
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="w-full mt-4 py-2 text-slate-500 hover:text-slate-300 text-sm font-medium transition-colors"
+            >
+              Leave Session
+            </button>
+          </form>
         </motion.div>
       </div>
     );
@@ -766,6 +856,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         handleCopyLink={handleCopyLink}
         copiedLink={copiedLink}
         handleDeleteSession={handleDeleteSession}
+        isPro={sessionId === ADMIN_SESSION_ID}
       />
 
       {/* Mobile Tabs */}

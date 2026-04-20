@@ -586,18 +586,14 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         setIsValidating(false);
       })
       .catch(err => {
-        if (err.response?.status === 404 && !cachedText && !hasAutoAttempted.current) {
-          hasAutoAttempted.current = true;
-          handleActivateSession();
-          return;
-        }
-        
-        // Always redirect to main page for deleted/purged/missing rooms as requested
+        // Always redirect to main page for deleted/purged/missing rooms as requested by the user
+        // This prevents the 'Securing Connection' hang and shows the appropriate modal on home
         if (err.response?.status === 410) {
           router.replace("/?status=not_found&origin=purged");
         } else if (err.response?.status === 404) {
           router.replace(`/?status=not_found&origin=missing&id=${sessionId}`);
         } else {
+          // For other errors (network issues), show a generic error but don't redirect yet
           setSessionError("not_found");
           setIsValidating(false);
         }
@@ -724,13 +720,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     );
   }
 
+  // If we have a session error but haven't redirected yet (for non-404/410 errors)
   if (sessionError) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4 overflow-hidden relative">
-        {/* Ambient background glows */}
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none" />
-        
         <motion.div 
           ref={sessionErrorRef}
           initial={{ opacity: 0, y: 20 }}
@@ -738,44 +732,18 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           className="max-w-md w-full bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl shadow-2xl relative z-10 text-center"
         >
           <div className="w-20 h-20 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl border border-slate-700">
-             {sessionError === 'expired' ? (
-                <Loader2 className="w-10 h-10 text-rose-400 opacity-80" />
-             ) : (
-                <Cloud className="w-10 h-10 text-amber-400 opacity-80" />
-             )}
+            <Cloud className="w-10 h-10 text-amber-400 opacity-80" />
           </div>
-          
-          <h1 className="text-2xl font-bold mb-3">
-            {sessionError === 'expired' ? 'Session Expired' : 
-             sessionError === 'purged' ? 'Room Purged' : 'Room Not Found'}
-          </h1>
-          
+          <h1 className="text-2xl font-bold mb-3">Connection Error</h1>
           <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-            {sessionError === 'expired' 
-              ? "This session has been automatically purged after 24 hours of inactivity to protect your privacy."
-              : sessionError === 'purged'
-              ? "The session is deleted already because of no entry."
-              : `The session "${sessionId}" hasn't been initialized yet. Would you like to start a new workspace here?`}
+            We couldn't verify the session. It may have expired or there's a temporary connection issue.
           </p>
-
-          <div className="flex flex-col gap-3">
-            {sessionError === 'not_found' && (
-              <button 
-                onClick={handleActivateSession}
-                disabled={isActivating}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
-              >
-                {isActivating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                {isActivating ? 'Initializing...' : 'Start This Room'}
-              </button>
-            )}
-            <button 
-              onClick={() => window.location.href = '/'}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-xl transition-all border border-slate-700"
-            >
-              Back to Home
-            </button>
-          </div>
+          <button 
+            onClick={() => window.location.href = '/'}
+            className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-xl transition-all border border-slate-700"
+          >
+            Back to Home
+          </button>
         </motion.div>
       </div>
     );

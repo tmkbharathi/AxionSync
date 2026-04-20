@@ -159,6 +159,8 @@ app.route("/session/:sessionId")
         .set(activeKey, "1", "EX", 86400)
         .exec();
 
+      // Prevent browser caching of dynamic session data
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       res.json({ text: text || "", files });
     } catch (e) {
       console.error("Session load error:", e);

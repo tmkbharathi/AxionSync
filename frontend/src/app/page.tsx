@@ -9,7 +9,6 @@ import axios from "axios";
 import { useState, useRef, useMemo, useEffect, memo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
-import * as THREE from "three";
 import { siteConfig } from "@/config/site";
 import { Background3D } from "@/components/Background3D";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -110,7 +109,9 @@ function Home() {
       await axios.get(`${API_URL}/session/${key}`);
       router.push(`/${key}`);
     } catch (err: any) {
-      console.error("Join failed:", err);
+      if (err.response?.status !== 404) {
+        console.error("Join failed:", err);
+      }
       if (err.response?.status === 404) {
         setJoinError("Room not found");
       } else {

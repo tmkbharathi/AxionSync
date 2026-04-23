@@ -112,3 +112,9 @@ html, body {
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
   }
+
+  /* Hide Microsoft Edge password reveal and clear icons */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }

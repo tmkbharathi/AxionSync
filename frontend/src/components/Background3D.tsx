@@ -3,7 +3,6 @@
 import { useRef, useMemo, useEffect, memo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
-import * as THREE from "three";
 
 // Animated Particle Background using Three.js (Memoized to prevent unnecessary re-renders)
 const StarBackground = memo(function StarBackground({ isStatic, ...props }: any) {

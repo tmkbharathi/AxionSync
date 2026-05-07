@@ -271,7 +271,7 @@ function Home() {
               <input
                 id="main-content"
                 type="text"
-                placeholder="session key"
+                placeholder="Use Existing Key"
                 maxLength={8}
                 value={joinKey}
                 autoComplete="off"
@@ -280,7 +280,7 @@ function Home() {
                   setJoinKey(e.target.value);
                   if (joinError) setJoinError(null);
                 }}
-                className={`w-full py-4 bg-transparent border-2 ${joinError ? "border-red-500/50" : "border-transparent focus:border-blue-500/20"
+                className={`w-full py-4 bg-transparent border-2 ${joinError ? "border-red-500/50" : "border-slate-700/50 focus:border-blue-500/50"
                   } rounded-2xl transition-all font-mono tracking-widest uppercase placeholder:font-sans placeholder:tracking-normal placeholder:lowercase placeholder:text-sm placeholder:text-center ${joinError ? "placeholder:text-red-400" : "placeholder:text-slate-600"
                   } text-center ${joinKey.length > 0 ? "pr-26" : "px-4"
                   }`}
@@ -441,8 +441,8 @@ function Home() {
                 <X className="w-5 h-5" />
               </button>
 
-              <motion.div 
-                animate={{ 
+              <motion.div
+                animate={{
                   backgroundColor: adminPassword === ADMIN_PASSWORD ? "rgba(16, 185, 129, 0.15)" : "rgba(37, 99, 235, 0.15)",
                   borderColor: adminPassword === ADMIN_PASSWORD ? "rgba(16, 185, 129, 0.3)" : "rgba(37, 99, 235, 0.3)"
                 }}

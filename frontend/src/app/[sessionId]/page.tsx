@@ -468,7 +468,7 @@ const FileManagerPanel = memo(({
   uploadProgress, 
   activeTab, 
   isFilePanelCollapsed,
-  processFile,
+  processFiles,
   handleDownloadFile,
   handleDeleteFile,
   setIsFilePanelCollapsed
@@ -478,7 +478,7 @@ const FileManagerPanel = memo(({
   uploadProgress: number,
   activeTab: string,
   isFilePanelCollapsed: boolean,
-  processFile: (f: File) => void,
+  processFiles: (files: File[]) => void,
   handleDownloadFile: (f: FileMeta) => void,
   handleDeleteFile: (f: FileMeta) => void,
   setIsFilePanelCollapsed: (v: boolean) => void
@@ -521,25 +521,31 @@ const FileManagerPanel = memo(({
     setShowDeleteModal(true);
   }, [selectedIds]);
 
-  const confirmDeleteSelected = useCallback(() => {
-    files.filter(f => selectedIds.has(f.id)).forEach(f => handleDeleteFile(f));
-    setSelectedIds(new Set());
+  const confirmDeleteSelected = useCallback(async () => {
+    const filesToDelete = files.filter(f => selectedIds.has(f.id));
     setShowDeleteModal(false);
+    setSelectedIds(new Set()); // Clear selection immediately
+    
+    // Stagger deletion to allow smooth exit animations
+    for (const f of filesToDelete) {
+      handleDeleteFile(f);
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
   }, [selectedIds, files, handleDeleteFile]);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
-    Array.from(e.target.files).forEach(file => processFile(file));
+    processFiles(Array.from(e.target.files));
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [processFile]);
+  }, [processFiles]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     if (e.dataTransfer.files?.length) {
-      Array.from(e.dataTransfer.files).forEach(file => processFile(file));
+      processFiles(Array.from(e.dataTransfer.files));
     }
-  }, [processFile]);
+  }, [processFiles]);
 
   return (
     <div className={`h-full bg-slate-900/20 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${activeTab === 'files' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-full md:w-2/5 lg:w-1/3 opacity-100'}`}>
@@ -574,16 +580,20 @@ const FileManagerPanel = memo(({
         </div>
         <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
         <div onDrop={onDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} className="relative">
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className={`w-full py-4 border-2 border-dashed ${isDragOver ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-700/80 text-slate-400"} rounded-xl flex flex-col items-center justify-center gap-2 hover:bg-slate-800/30 hover:border-blue-500/50 hover:text-blue-400 transition-all overflow-hidden relative group`}
+          <div 
+            onClick={() => { if (!uploading) fileInputRef.current?.click(); }}
+            className={`w-full py-4 border-2 border-dashed ${isDragOver ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-700/80 text-slate-400"} rounded-xl flex flex-col items-center justify-center gap-2 transition-all overflow-hidden relative group ${uploading ? 'cursor-not-allowed opacity-90' : 'cursor-pointer hover:bg-slate-800/30 hover:border-blue-500/50 hover:text-blue-400'}`}
+            role="button"
+            tabIndex={0}
           >
             {uploading ? (
               <div className="absolute inset-0 bg-slate-800/80 flex flex-col items-center justify-center backdrop-blur-sm z-10">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-400 mb-2" />
-                <div className="w-2/3 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${uploadProgress}%` }} />
+                <div className="w-2/3 h-2.5 bg-slate-700 rounded-full overflow-hidden">
+                  <div 
+                    className="h-2.5 bg-blue-500 rounded-full transition-all duration-300 ease-out" 
+                    style={{ width: `${Math.max(uploadProgress, 2)}%` }} 
+                  />
                 </div>
                 <span className="text-xs mt-2 font-medium text-slate-300">{uploadProgress}%</span>
               </div>
@@ -593,7 +603,7 @@ const FileManagerPanel = memo(({
                 <span className="text-sm font-medium">Click or Drag to Upload (Max 50MB)</span>
               </>
             )}
-          </button>
+          </div>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
@@ -804,26 +814,50 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     setTimeout(() => setCopiedLink(false), 2000);
   }, []);
 
-  const processFile = useCallback(async (file: File) => {
-    if (file.size > 50 * 1024 * 1024) return alert("File exceeds 50MB limit");
-    if (file.size > 20 * 1024 * 1024 && !window.confirm("Large file download (>20MB) may take time. Continue?")) return;
+  const processFiles = useCallback(async (filesToUpload: File[]) => {
+    const validFiles = filesToUpload.filter(file => {
+      if (file.size > 50 * 1024 * 1024) {
+        alert(`File ${file.name} exceeds 50MB limit`);
+        return false;
+      }
+      return true;
+    });
 
-    const formData = new FormData();
-    formData.append("file", file);
+    if (validFiles.length === 0) return;
+
+    // Check if large files exist
+    const hasLargeFile = validFiles.some(f => f.size > 20 * 1024 * 1024);
+    if (hasLargeFile && !window.confirm("Large file(s) (>20MB) may take time. Continue?")) return;
+
     setUploading(true);
     setUploadProgress(0);
 
-    try {
-      await axios.post(`${API_URL}/upload/${sessionId}`, formData, {
+    const totalSize = validFiles.reduce((acc, f) => acc + f.size, 0);
+    const loadedSizes = new Array(validFiles.length).fill(0);
+
+    const results = await Promise.allSettled(validFiles.map((file, index) => {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      return axios.post(`${API_URL}/upload/${sessionId}`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
-        onUploadProgress: (p) => { if (p.total) setUploadProgress(Math.round((p.loaded * 100) / p.total)); }
+        onUploadProgress: (p) => { 
+          if (p.loaded) {
+            loadedSizes[index] = p.loaded;
+            const currentTotalLoaded = loadedSizes.reduce((a, b) => a + b, 0);
+            setUploadProgress(Math.min(100, Math.round((currentTotalLoaded * 100) / totalSize)));
+          }
+        }
       });
-    } catch (err: any) {
-      alert(err.response?.data?.error || "Upload failed");
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
+    }));
+
+    const failed = results.filter(r => r.status === 'rejected');
+    if (failed.length > 0) {
+      alert(`${failed.length} file(s) failed to upload.`);
     }
+    
+    setUploading(false);
+    setUploadProgress(0);
   }, [sessionId]);
 
   const handleDownloadFile = useCallback(async (file: FileMeta) => {
@@ -1042,7 +1076,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           uploadProgress={uploadProgress}
           activeTab={activeTab}
           isFilePanelCollapsed={isFilePanelCollapsed}
-          processFile={processFile}
+          processFiles={processFiles}
           handleDownloadFile={handleDownloadFile}
           handleDeleteFile={handleDeleteFile}
           setIsFilePanelCollapsed={setIsFilePanelCollapsed}

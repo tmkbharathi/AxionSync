@@ -4,17 +4,27 @@ import { useEffect, useRef, useCallback } from "react";
  * Hook to trap focus within a container.
  * Useful for modals, dropdowns, etc.
  */
-export const useFocusTrap = (isActive: boolean) => {
+export const useFocusTrap = (isActive: boolean, onClose?: () => void) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (!isActive || !containerRef.current || e.key !== "Tab") return;
+    if (!isActive) return;
+
+    if (e.key === "Escape" && onClose) {
+      e.preventDefault();
+      onClose();
+      return;
+    }
+
+    if (!containerRef.current || e.key !== "Tab") return;
 
     const focusableElements = containerRef.current.querySelectorAll(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
     
+    if (focusableElements.length === 0) return;
+
     const firstElement = focusableElements[0] as HTMLElement;
     const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
 
@@ -29,7 +39,7 @@ export const useFocusTrap = (isActive: boolean) => {
         firstElement.focus();
       }
     }
-  }, [isActive]);
+  }, [isActive, onClose]);
 
   useEffect(() => {
     if (isActive) {

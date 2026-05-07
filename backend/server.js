@@ -283,6 +283,19 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
       redis.sadd(ALL_SESSIONS_KEY, sessionId)
     ]);
 
+    // Add preview URL for immediate display
+    if (fileMeta.mimeType && fileMeta.mimeType.startsWith("image/")) {
+      try {
+        const command = new GetObjectCommand({
+          Bucket: S3_BUCKET_NAME,
+          Key: fileMeta.s3Key,
+        });
+        fileMeta.previewUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+      } catch (err) {
+        console.error("Preview URL generation failed on upload", err);
+      }
+    }
+
     // Notify clients in session
     io.to(sessionId).emit("file_uploaded", fileMeta);
 

@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { v4 as uuidv4 } from "uuid";
 import { 
-  Copy, CheckCircle, UploadCloud, Cloud, X, Download, Trash2, Link, 
+  Copy, CheckCircle, Check, UploadCloud, Cloud, X, Download, Trash2, Link, 
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
   Info, Monitor, Tablet, Globe, Share2,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
@@ -110,20 +110,33 @@ const formatSize = (bytes: number) => {
 const FileItem = memo(({ 
   file, 
   handleDownload, 
-  handleDelete 
+  handleDelete,
+  isSelected,
+  onToggleSelect
 }: { 
   file: FileMeta, 
   handleDownload: (f: FileMeta) => void, 
-  handleDelete: (f: FileMeta) => void 
+  handleDelete: (f: FileMeta) => void,
+  isSelected: boolean,
+  onToggleSelect: (id: string) => void
 }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="bg-slate-800/40 border border-slate-700/50 p-3 rounded-xl flex items-center justify-between group hover:bg-slate-800/80 transition-colors"
+      className={`bg-slate-800/40 border p-3 rounded-xl flex items-center justify-between group transition-colors ${isSelected ? 'border-blue-500/50 bg-blue-500/5' : 'border-slate-700/50 hover:bg-slate-800/80'}`}
     >
       <div className="flex items-center gap-3 overflow-hidden pr-3">
+        <button 
+          onClick={() => onToggleSelect(file.id)}
+          className="shrink-0 p-1 -ml-1 flex items-center justify-center group/check"
+          title={isSelected ? "Deselect" : "Select"}
+        >
+          <div className={`w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center transition-all duration-200 ${isSelected ? 'bg-blue-500 border-blue-500 scale-100 shadow-sm shadow-blue-500/20' : 'bg-slate-900/50 border-slate-600 group-hover/check:border-blue-400 scale-95 group-hover/check:scale-100'}`}>
+            <Check className={`w-3 h-3 text-white transition-opacity duration-200 ${isSelected ? 'opacity-100' : 'opacity-0'}`} strokeWidth={3} />
+          </div>
+        </button>
         {file.previewUrl ? (
           <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 shrink-0">
              <img src={file.previewUrl} alt={file.name} className="w-full h-full object-cover" />
@@ -472,27 +485,94 @@ const FileManagerPanel = memo(({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  
+  const deleteModalRef = useFocusTrap(showDeleteModal, () => setShowDeleteModal(false));
+
+  // Cleanup selectedIds when files change (e.g. on delete)
+  useEffect(() => {
+    const validIds = new Set(files.map(f => f.id));
+    let changed = false;
+    const newSet = new Set<string>();
+    selectedIds.forEach(id => {
+      if (validIds.has(id)) newSet.add(id);
+      else changed = true;
+    });
+    if (changed) setSelectedIds(newSet);
+  }, [files, selectedIds]);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    if (selectedIds.size === files.length && files.length > 0) setSelectedIds(new Set());
+    else setSelectedIds(new Set(files.map(f => f.id)));
+  }, [files, selectedIds.size]);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    setShowDeleteModal(true);
+  }, [selectedIds]);
+
+  const confirmDeleteSelected = useCallback(() => {
+    files.filter(f => selectedIds.has(f.id)).forEach(f => handleDeleteFile(f));
+    setSelectedIds(new Set());
+    setShowDeleteModal(false);
+  }, [selectedIds, files, handleDeleteFile]);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
-    processFile(e.target.files[0]);
+    Array.from(e.target.files).forEach(file => processFile(file));
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [processFile]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    if (e.dataTransfer.files?.length) processFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files?.length) {
+      Array.from(e.dataTransfer.files).forEach(file => processFile(file));
+    }
   }, [processFile]);
 
   return (
     <div className={`h-full bg-slate-900/20 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${activeTab === 'files' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-full md:w-2/5 lg:w-1/3 opacity-100'}`}>
       <div className="p-4 md:p-6 border-b border-slate-800/60">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-slate-200">Files</h2>
-          <span className="text-xs text-slate-400 px-2 py-1 bg-slate-800 rounded-full">{files.length} items</span>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-slate-200">Files</h2>
+            {files.length > 0 && (
+              <button 
+                onClick={handleSelectAll}
+                className="flex items-center gap-2 cursor-pointer text-slate-400 hover:text-slate-200 text-sm transition-colors group/all"
+              >
+                <div className={`w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center transition-all duration-200 ${selectedIds.size === files.length && files.length > 0 ? 'bg-blue-500 border-blue-500 scale-100 shadow-sm shadow-blue-500/20' : 'bg-slate-900/50 border-slate-600 group-hover/all:border-blue-400 scale-95 group-hover/all:scale-100'}`}>
+                  <Check className={`w-3 h-3 text-white transition-opacity duration-200 ${selectedIds.size === files.length && files.length > 0 ? 'opacity-100' : 'opacity-0'}`} strokeWidth={3} />
+                </div>
+                <span className="font-medium">All</span>
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <button 
+                onClick={handleDeleteSelected}
+                className="flex items-center justify-center h-[24px] px-2 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded-full transition-colors"
+                title="Delete Selected"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <span className="text-xs text-slate-400 px-2.5 bg-slate-800 rounded-full flex items-center h-[24px]">{files.length} items</span>
+          </div>
         </div>
-        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+        <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
         <div onDrop={onDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} className="relative">
           <button 
             onClick={() => fileInputRef.current?.click()}
@@ -524,11 +604,70 @@ const FileManagerPanel = memo(({
         ) : (
           <div className="space-y-3">
             <AnimatePresence>
-              {files.map((f) => <FileItem key={f.id} file={f} handleDownload={handleDownloadFile} handleDelete={handleDeleteFile} />)}
+              {files.map((f) => (
+                <FileItem 
+                  key={f.id} 
+                  file={f} 
+                  handleDownload={handleDownloadFile} 
+                  handleDelete={handleDeleteFile} 
+                  isSelected={selectedIds.has(f.id)}
+                  onToggleSelect={toggleSelect}
+                />
+              ))}
             </AnimatePresence>
           </div>
         )}
       </div>
+
+      {/* Delete Selected Files Modal */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDeleteModal(false)}
+              className="absolute inset-0 bg-slate-950/90 backdrop-blur-lg"
+            />
+            <motion.div 
+              ref={deleteModalRef}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-8">
+                <div className="w-16 h-16 bg-rose-500/10 rounded-2xl flex items-center justify-center mb-6 border border-rose-500/20">
+                  <Trash2 className="w-8 h-8 text-rose-500" />
+                </div>
+                
+                <h3 className="text-2xl font-bold text-white mb-3">Delete Selected Files?</h3>
+                <p className="text-slate-400 mb-8 leading-relaxed">
+                  You are about to delete <span className="text-rose-400 font-semibold">{selectedIds.size} file{selectedIds.size === 1 ? '' : 's'}</span> for <span className="text-white font-semibold">everyone</span> in this room. This action cannot be undone.
+                </p>
+                
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={confirmDeleteSelected}
+                    className="w-full py-4 px-6 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-2xl transition-all shadow-lg shadow-rose-500/20 active:scale-[0.98] flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                    Delete {selectedIds.size} File{selectedIds.size === 1 ? '' : 's'}
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowDeleteModal(false)}
+                    className="w-full py-4 px-6 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-2xl transition-all active:scale-[0.98]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 });
@@ -561,23 +700,21 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isFilePanelCollapsed, setIsFilePanelCollapsed] = useState(false);
 
-  const devicesModalRef = useFocusTrap(showDevicesModal);
-  const qrModalRef = useFocusTrap(showQr);
-  const deleteModalRef = useFocusTrap(showDeleteModal);
+  const devicesModalRef = useFocusTrap(showDevicesModal, () => setShowDevicesModal(false));
+  const qrModalRef = useFocusTrap(showQr, () => setShowQr(false));
+  const deleteModalRef = useFocusTrap(showDeleteModal, () => setShowDeleteModal(false));
   const sessionErrorRef = useFocusTrap(!!sessionError);
 
   const hasAutoAttempted = useRef(false);
 
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState(() => {
-    if (typeof window === "undefined") return false;
-    if (sessionId !== ADMIN_SESSION_ID) return true;
-    return sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`) === "true";
-  });
+  const [hasMounted, setHasMounted] = useState(false);
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [adminPasswordValue, setAdminPasswordValue] = useState("");
   const [adminAuthError, setAdminAuthError] = useState(false);
 
   // Sync state if sessionId changes (though sessionId is usually static in this route)
   useEffect(() => {
+    setHasMounted(true);
     if (sessionId === ADMIN_SESSION_ID) {
       const isAuth = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`) === "true";
       setIsAdminUnlocked(isAuth);
@@ -728,6 +865,10 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
 
 
+
+  if (!hasMounted) {
+    return null; // Prevent hydration mismatch by avoiding rendering until mounted on client
+  }
 
   if (isValidating && isAdminUnlocked) {
     return (

@@ -23,6 +23,14 @@ const S3_REGION = process.env.S3_REGION || "auto";
 const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "";
 const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "";
 const S3_BUCKET_NAME = process.env.S3_BUCKET_NAME || "clipbridge";
+
+// Cloudflare R2 configuration (For Reserved Session only)
+const R2_ENDPOINT = process.env.R2_ENDPOINT || "";
+const R2_REGION = process.env.R2_REGION || "auto";
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || "";
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || "";
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || "";
+
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 const ALL_SESSIONS_KEY = "syncosync:all_sessions";
 
@@ -60,7 +68,27 @@ const s3 = new S3Client({
     secretAccessKey: S3_SECRET_ACCESS_KEY,
   },
   forcePathStyle: true, // Required for many S3-compatible providers like Supabase
+  requestChecksumCalculation: "WHEN_REQUIRED",
 });
+
+const r2Client = new S3Client({
+  region: R2_REGION,
+  endpoint: R2_ENDPOINT,
+  credentials: {
+    accessKeyId: R2_ACCESS_KEY_ID,
+    secretAccessKey: R2_SECRET_ACCESS_KEY,
+  },
+  forcePathStyle: true, // Required for Backblaze B2 and fully supported by Cloudflare R2
+  requestChecksumCalculation: "WHEN_REQUIRED",
+});
+
+const getStorageClientAndBucket = (sessionId) => {
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+  if (isAdminSession && R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY) {
+    return { client: r2Client, bucket: R2_BUCKET_NAME };
+  }
+  return { client: s3, bucket: S3_BUCKET_NAME };
+};
 
 // Multer setup removed (uploads are handled direct-to-S3)
 
@@ -116,11 +144,12 @@ app.route("/session/:sessionId")
             // Add signed preview URL for images - only for small images or first few for performance
             if (file.mimeType && file.mimeType.startsWith("image/")) {
               try {
+                const { client, bucket } = getStorageClientAndBucket(sessionId);
                 const command = new GetObjectCommand({
-                  Bucket: S3_BUCKET_NAME,
+                  Bucket: bucket,
                   Key: file.s3Key,
                 });
-                file.previewUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+                file.previewUrl = await getSignedUrl(client, command, { expiresIn: 3600 });
               } catch (err) {
                 console.error("Preview URL generation failed", err);
               }
@@ -158,9 +187,10 @@ app.route("/session/:sessionId")
       const files = filesRaw.map(f => JSON.parse(f));
 
       // Optimized: Delete from S3 in parallel
+      const { client, bucket } = getStorageClientAndBucket(sessionId);
       await Promise.all(files.map(file => 
-        s3.send(new DeleteObjectCommand({
-          Bucket: S3_BUCKET_NAME,
+        client.send(new DeleteObjectCommand({
+          Bucket: bucket,
           Key: file.s3Key
         })).catch(err => console.error(`Failed to delete file ${file.s3Key} from S3:`, err))
       ));
@@ -219,14 +249,15 @@ app.post("/session/:sessionId/upload/presign", async (req, res) => {
     const fileId = `${Date.now()}-${fileName}`;
     const s3Key = `${sessionId}/${fileId}`;
 
+    const { client, bucket } = getStorageClientAndBucket(sessionId);
     const command = new PutObjectCommand({
-      Bucket: S3_BUCKET_NAME,
+      Bucket: bucket,
       Key: s3Key,
       ContentType: mimeType,
       ContentLength: fileSize,
     });
 
-    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 900 }); // Expires in 15 mins
+    const uploadUrl = await getSignedUrl(client, command, { expiresIn: 900 }); // Expires in 15 mins
 
     res.json({ uploadUrl, fileId, s3Key });
   } catch (error) {
@@ -271,11 +302,12 @@ app.post("/session/:sessionId/upload/confirm", async (req, res) => {
 
     // 2. Hash check for duplicate uploads
     if (existingFiles.some(f => f.hash === hash)) {
-      // Clean up the object from S3 since it is a duplicate
-      await s3.send(new DeleteObjectCommand({
-        Bucket: S3_BUCKET_NAME,
+      // Clean up the object from S3/R2 since it is a duplicate
+      const { client, bucket } = getStorageClientAndBucket(sessionId);
+      await client.send(new DeleteObjectCommand({
+        Bucket: bucket,
         Key: s3Key
-      })).catch(err => console.error("Failed to delete duplicate S3 file:", err));
+      })).catch(err => console.error("Failed to delete duplicate file from storage:", err));
       
       return res.status(409).json({ error: "File already uploaded in this session." });
     }
@@ -309,11 +341,12 @@ app.post("/session/:sessionId/upload/confirm", async (req, res) => {
     // Add preview URL for immediate display
     if (fileMeta.mimeType && fileMeta.mimeType.startsWith("image/")) {
       try {
+        const { client, bucket } = getStorageClientAndBucket(sessionId);
         const command = new GetObjectCommand({
-          Bucket: S3_BUCKET_NAME,
+          Bucket: bucket,
           Key: fileMeta.s3Key,
         });
-        fileMeta.previewUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+        fileMeta.previewUrl = await getSignedUrl(client, command, { expiresIn: 3600 });
       } catch (err) {
         console.error("Preview URL generation failed on upload", err);
       }
@@ -334,11 +367,14 @@ app.get("/download", async (req, res) => {
     const s3Key = req.query.s3Key;
     if (!s3Key) return res.status(400).json({ error: "Missing s3Key" });
 
+    const sessionId = s3Key.split("/")[0];
+    const { client, bucket } = getStorageClientAndBucket(sessionId);
+
     const command = new GetObjectCommand({
-      Bucket: S3_BUCKET_NAME,
+      Bucket: bucket,
       Key: s3Key,
     });
-    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 86400 });
+    const signedUrl = await getSignedUrl(client, command, { expiresIn: 86400 });
     res.json({ url: signedUrl });
   } catch (error) {
     console.error("Download error:", error);
@@ -446,8 +482,9 @@ io.on("connection", (socket) => {
   socket.on("delete_file", async ({ sessionId, file }) => {
     try {
       // Delete from S3/R2
-      await s3.send(new DeleteObjectCommand({
-        Bucket: S3_BUCKET_NAME,
+      const { client, bucket } = getStorageClientAndBucket(sessionId);
+      await client.send(new DeleteObjectCommand({
+        Bucket: bucket,
         Key: file.s3Key
       }));
 
@@ -488,66 +525,76 @@ io.on("connection", (socket) => {
   });
 });
 
-// --- CRON JOBS FOR AUTO CLEANUP ---
-// Ran every hour: deletes files older than 1 hr from R2
-cron.schedule("0 * * * *", async () => {
-  console.log("Running hourly R2 cleanup job...");
-  try {
-    const twentyFourHoursAgo = new Date(Date.now() - 86400 * 1000);
-    let isTruncated = true;
-    let continuationToken = undefined;
+const cleanupBucket = async (client, bucket, isR2 = false) => {
+  const twentyFourHoursAgo = new Date(Date.now() - 86400 * 1000);
+  let isTruncated = true;
+  let continuationToken = undefined;
 
-    while (isTruncated) {
-      const listCommand = new ListObjectsV2Command({
-        Bucket: S3_BUCKET_NAME,
-        ContinuationToken: continuationToken,
-      });
-      const response = await s3.send(listCommand);
-      const objects = response.Contents || [];
+  while (isTruncated) {
+    const listCommand = new ListObjectsV2Command({
+      Bucket: bucket,
+      ContinuationToken: continuationToken,
+    });
+    const response = await client.send(listCommand);
+    const objects = response.Contents || [];
 
-      const keysToDelete = [];
-      for (const obj of objects) {
-        if (obj.Key && obj.LastModified) {
-          try {
-            // Extract sessionId from the key (format: sessionId/fileId)
-            const sessionId = obj.Key.split("/")[0];
-            const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+    const keysToDelete = [];
+    for (const obj of objects) {
+      if (obj.Key && obj.LastModified) {
+        try {
+          // Extract sessionId from the key (format: sessionId/fileId)
+          const sessionId = obj.Key.split("/")[0];
+          const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
-            // Cutoff is 1 year (365 days) for admin, 24 hours for others
-            const cutoff = isAdminSession
-              ? new Date(Date.now() - 365 * 86400 * 1000)
-              : twentyFourHoursAgo;
+          // Cutoff is 1 year (365 days) for admin, 24 hours for others
+          const cutoff = isAdminSession
+            ? new Date(Date.now() - 365 * 86400 * 1000)
+            : twentyFourHoursAgo;
 
-            if (obj.LastModified < cutoff) {
-              if (isAdminSession) {
-                // For admin session, delete files older than 1 year
+          if (obj.LastModified < cutoff) {
+            if (isAdminSession) {
+              // For admin session, delete files older than 1 year
+              keysToDelete.push({ Key: obj.Key });
+            } else {
+              // Check if session is still active in Redis
+              const isActive = await redis.exists(`session:${sessionId}:active`);
+              if (!isActive) {
                 keysToDelete.push({ Key: obj.Key });
-              } else {
-                // Check if session is still active in Redis
-                const isActive = await redis.exists(`session:${sessionId}:active`);
-                if (!isActive) {
-                  keysToDelete.push({ Key: obj.Key });
-                }
               }
             }
-          } catch (err) {
-            console.error(`Error checking activity for ${obj.Key}:`, err);
           }
+        } catch (err) {
+          console.error(`Error checking activity for ${obj.Key}:`, err);
         }
       }
-
-      for (const keyObj of keysToDelete) {
-        await s3.send(new DeleteObjectCommand({
-          Bucket: S3_BUCKET_NAME,
-          Key: keyObj.Key
-        }));
-        console.log(`Auto-cleaned stale object: ${keyObj.Key}`);
-      }
-
-      isTruncated = response.IsTruncated || false;
-      continuationToken = response.NextContinuationToken;
     }
-    console.log("Hourly R2 cleanup finished.");
+
+    for (const keyObj of keysToDelete) {
+      await client.send(new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: keyObj.Key
+      }));
+      console.log(`Auto-cleaned stale object from ${isR2 ? "R2" : "Supabase"}: ${keyObj.Key}`);
+    }
+
+    isTruncated = response.IsTruncated || false;
+    continuationToken = response.NextContinuationToken;
+  }
+};
+
+// --- CRON JOBS FOR AUTO CLEANUP ---
+// Ran every hour: deletes inactive/stale files from storage
+cron.schedule("0 * * * *", async () => {
+  console.log("Running hourly storage cleanup job...");
+  try {
+    // 1. Cleanup Supabase storage (S3)
+    await cleanupBucket(s3, S3_BUCKET_NAME, false);
+
+    // 2. Cleanup Cloudflare R2 storage (only if configured)
+    if (R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY) {
+      await cleanupBucket(r2Client, R2_BUCKET_NAME, true);
+    }
+    console.log("Hourly storage cleanup finished.");
 
     // --- SESSION AUTO-CLEANUP (EMPTY ROOMS) ---
     console.log("Running hourly session inactivity cleanup...");

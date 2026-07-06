@@ -28,6 +28,14 @@ const QRCodeSVG = dynamic(() => import("qrcode.react").then(mod => mod.QRCodeSVG
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
+// Calculate SHA-256 hash of a file using Web Crypto API
+const calculateSHA256 = async (file: File): Promise<string> => {
+  const arrayBuffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+};
+
 // Admin Credentials
 const ADMIN_SESSION_ID = process.env.NEXT_PUBLIC_ADMIN_SESSION_ID;
 const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
@@ -295,10 +303,14 @@ const SessionHeader = memo(({
 });
 
 // Memoized Footer for performance
-const SessionFooter = memo(() => {
+const SessionFooter = memo(({ isPro }: { isPro?: boolean }) => {
   return (
     <footer className="text-[10px] md:text-xs text-slate-500 text-center py-2 bg-slate-950 z-10 border-t border-slate-900 flex justify-center items-center gap-4">
-      <span>Data auto-destructs after 24 hours of inactivity.</span>
+      <span>
+        {isPro 
+          ? "Data auto-destructs after 1 year of inactivity." 
+          : "Data auto-destructs after 24 hours of inactivity."}
+      </span>
       <span className="text-slate-700">|</span>
       <span className="font-medium text-slate-600">Beta v{siteConfig.version}</span>
     </footer>
@@ -816,8 +828,9 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
   const processFiles = useCallback(async (filesToUpload: File[]) => {
     const validFiles = filesToUpload.filter(file => {
-      if (file.size > 50 * 1024 * 1024) {
-        alert(`File ${file.name} exceeds 50MB limit`);
+      const maxFileSize = sessionId === ADMIN_SESSION_ID ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
+      if (file.size > maxFileSize) {
+        alert(`File ${file.name} exceeds the ${sessionId === ADMIN_SESSION_ID ? '1GB' : '50MB'} limit`);
         return false;
       }
       return true;
@@ -835,12 +848,21 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     const totalSize = validFiles.reduce((acc, f) => acc + f.size, 0);
     const loadedSizes = new Array(validFiles.length).fill(0);
 
-    const results = await Promise.allSettled(validFiles.map((file, index) => {
-      const formData = new FormData();
-      formData.append("file", file);
+    const results = await Promise.allSettled(validFiles.map(async (file, index) => {
+      // 1. Calculate SHA-256 hash
+      const hash = await calculateSHA256(file);
 
-      return axios.post(`${API_URL}/upload/${sessionId}`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+      // 2. Request pre-signed S3 upload URL from backend
+      const presignRes = await axios.post(`${API_URL}/session/${sessionId}/upload/presign`, {
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type || "application/octet-stream"
+      });
+      const { uploadUrl, fileId, s3Key } = presignRes.data;
+
+      // 3. Upload directly to S3 via PUT
+      await axios.put(uploadUrl, file, {
+        headers: { "Content-Type": file.type || "application/octet-stream" },
         onUploadProgress: (p) => { 
           if (p.loaded) {
             loadedSizes[index] = p.loaded;
@@ -848,6 +870,16 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             setUploadProgress(Math.min(100, Math.round((currentTotalLoaded * 100) / totalSize)));
           }
         }
+      });
+
+      // 4. Confirm upload to backend to commit metadata
+      return axios.post(`${API_URL}/session/${sessionId}/upload/confirm`, {
+        fileId,
+        name: file.name,
+        size: file.size,
+        mimeType: file.type || "application/octet-stream",
+        s3Key,
+        hash
       });
     }));
 
@@ -1083,7 +1115,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         />
       </main>
 
-      <SessionFooter />
+      <SessionFooter isPro={sessionId === ADMIN_SESSION_ID} />
 
       {/* Device Info Modal */}
       <AnimatePresence>

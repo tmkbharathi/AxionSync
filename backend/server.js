@@ -78,7 +78,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB limit (dynamically restricted in route handler)
 });
 
 // --- STARTUP CLEANUP ---
@@ -163,7 +163,7 @@ app.route("/session/:sessionId")
       await redis.pipeline()
         .set(lastActiveKey, Date.now().toString())
         .sadd(ALL_SESSIONS_KEY, sessionId)
-        .set(activeKey, "1", "EX", 86400)
+        .set(activeKey, "1", "EX", isAdminSession ? 86400 * 365 : 86400)
         .exec();
 
       // Prevent browser caching of dynamic session data
@@ -218,15 +218,35 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
 
   try {
     const filesKey = `session:${sessionId}:files`;
+    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
-    // 1. Limit total files per session (max 20)
-    const currentFilesCount = await redis.llen(filesKey);
-    if (currentFilesCount >= 20) {
-      if (fs.existsSync(file.path)) fs.unlinkSync(file.path); // Clean up temp file
-      return res.status(400).json({ error: "Session file limit (20) reached. Please delete old files." });
+    // 1. Enforce individual file size limit
+    const maxFileSize = isAdminSession ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
+    if (file.size > maxFileSize) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      return res.status(400).json({ error: `File size exceeds the limit of ${isAdminSession ? "1GB" : "50MB"}.` });
     }
 
-    // 2. Hash check for duplicate uploads (Calculate from disk using streams for memory efficiency)
+    // 2. Limit total files per session (max 20 for standard, 100 for admin)
+    const currentFilesCount = await redis.llen(filesKey);
+    const maxFilesCount = isAdminSession ? 100 : 20;
+    if (currentFilesCount >= maxFilesCount) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path); // Clean up temp file
+      return res.status(400).json({ error: `Session file limit (${maxFilesCount}) reached. Please delete old files.` });
+    }
+
+    // 3. Limit total storage size per session (max 1GB)
+    const existingFilesRaw = await redis.lrange(filesKey, 0, -1);
+    const existingFiles = existingFilesRaw.map(f => JSON.parse(f));
+    const totalExistingSize = existingFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+    const maxTotalStorage = 1024 * 1024 * 1024; // 1GB limit
+
+    if (totalExistingSize + file.size > maxTotalStorage) {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      return res.status(400).json({ error: "Session total storage limit (1GB) reached. Please delete old files." });
+    }
+
+    // 4. Hash check for duplicate uploads (Calculate from disk using streams for memory efficiency)
     const fileHash = await new Promise((resolve, reject) => {
       const hash = crypto.createHash("sha256");
       const stream = fs.createReadStream(file.path);
@@ -234,9 +254,6 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
       stream.on("end", () => resolve(hash.digest("hex")));
       stream.on("error", (err) => reject(err));
     });
-    
-    const existingFilesRaw = await redis.lrange(filesKey, 0, -1);
-    const existingFiles = existingFilesRaw.map(f => JSON.parse(f));
 
     if (existingFiles.some(f => f.hash === fileHash)) {
       if (fs.existsSync(file.path)) fs.unlinkSync(file.path); // Clean up temp file
@@ -269,16 +286,18 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
       hash: fileHash,
     };
 
+    const expiryTime = isAdminSession ? 86400 * 365 : 86400;
+
     // Save metadata to Redis and reset expiry
     await redis.lpush(filesKey, JSON.stringify(fileMeta));
-    await redis.expire(filesKey, 86400);
+    await redis.expire(filesKey, expiryTime);
 
     // Reset text expiry so session stays alive
     const textKey = `session:${sessionId}:text`;
     const activeKey = `session:${sessionId}:active`;
     await Promise.all([
-      redis.expire(textKey, 86400),
-      redis.expire(activeKey, 86400),
+      redis.expire(textKey, expiryTime),
+      redis.expire(activeKey, expiryTime),
       redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
       redis.sadd(ALL_SESSIONS_KEY, sessionId)
     ]);
@@ -331,8 +350,9 @@ app.post("/session/:sessionId/init", async (req, res) => {
   const { sessionId } = req.params;
   try {
     const activeKey = `session:${sessionId}:active`;
+    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
     await Promise.all([
-      redis.set(activeKey, "1", "EX", 86400), // 24 hours heartbeat
+      redis.set(activeKey, "1", "EX", isAdminSession ? 86400 * 365 : 86400), // 1 year for admin, 24 hours for others
       redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
       redis.sadd(ALL_SESSIONS_KEY, sessionId)
     ]);
@@ -365,10 +385,12 @@ io.on("connection", (socket) => {
 
     // Refresh overall session expiry on join
     try {
+      const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+      const expiryTime = isAdminSession ? 86400 * 365 : 86400;
       await Promise.all([
-        redis.expire(`session:${sessionId}:active`, 86400),
-        redis.expire(`session:${sessionId}:text`, 86400),
-        redis.expire(`session:${sessionId}:files`, 86400),
+        redis.expire(`session:${sessionId}:active`, expiryTime),
+        redis.expire(`session:${sessionId}:text`, expiryTime),
+        redis.expire(`session:${sessionId}:files`, expiryTime),
         redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
         redis.sadd(ALL_SESSIONS_KEY, sessionId)
       ]);
@@ -403,10 +425,13 @@ io.on("connection", (socket) => {
     const activeKey = `session:${sessionId}:active`;
     const lastActiveKey = `session:${sessionId}:last_active`;
 
+    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+    const expiryTime = isAdminSession ? 86400 * 365 : 86400;
+
     // Optimized: Use pipeline for updates
     await redis.pipeline()
-      .set(textKey, normalized, "EX", 86400)
-      .expire(activeKey, 86400)
+      .set(textKey, normalized, "EX", expiryTime)
+      .expire(activeKey, expiryTime)
       .set(lastActiveKey, Date.now().toString())
       .sadd(ALL_SESSIONS_KEY, sessionId)
       .exec();
@@ -481,17 +506,28 @@ cron.schedule("0 * * * *", async () => {
 
       const keysToDelete = [];
       for (const obj of objects) {
-        if (obj.LastModified && obj.LastModified < twentyFourHoursAgo) {
+        if (obj.Key && obj.LastModified) {
           try {
             // Extract sessionId from the key (format: sessionId/fileId)
             const sessionId = obj.Key.split("/")[0];
-            
-            // Check if session is still active in Redis
-            // If the key exists, the session is considered "alive" and we keep the files
-            const isActive = await redis.exists(`session:${sessionId}:active`);
-            
-            if (!isActive) {
-              keysToDelete.push({ Key: obj.Key });
+            const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
+            // Cutoff is 1 year (365 days) for admin, 24 hours for others
+            const cutoff = isAdminSession
+              ? new Date(Date.now() - 365 * 86400 * 1000)
+              : twentyFourHoursAgo;
+
+            if (obj.LastModified < cutoff) {
+              if (isAdminSession) {
+                // For admin session, delete files older than 1 year
+                keysToDelete.push({ Key: obj.Key });
+              } else {
+                // Check if session is still active in Redis
+                const isActive = await redis.exists(`session:${sessionId}:active`);
+                if (!isActive) {
+                  keysToDelete.push({ Key: obj.Key });
+                }
+              }
             }
           } catch (err) {
             console.error(`Error checking activity for ${obj.Key}:`, err);

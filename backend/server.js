@@ -235,15 +235,15 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: `Session file limit (${maxFilesCount}) reached. Please delete old files.` });
     }
 
-    // 3. Limit total storage size per session (max 1GB)
+    // 3. Limit total storage size per session (max 1GB for admin, 50MB for standard)
     const existingFilesRaw = await redis.lrange(filesKey, 0, -1);
     const existingFiles = existingFilesRaw.map(f => JSON.parse(f));
     const totalExistingSize = existingFiles.reduce((acc, f) => acc + (f.size || 0), 0);
-    const maxTotalStorage = 1024 * 1024 * 1024; // 1GB limit
+    const maxTotalStorage = isAdminSession ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
 
     if (totalExistingSize + file.size > maxTotalStorage) {
       if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-      return res.status(400).json({ error: "Session total storage limit (1GB) reached. Please delete old files." });
+      return res.status(400).json({ error: `Session total storage limit (${isAdminSession ? "1GB" : "50MB"}) reached. Please delete old files.` });
     }
 
     // 4. Hash check for duplicate uploads (Calculate from disk using streams for memory efficiency)

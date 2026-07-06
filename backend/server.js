@@ -62,36 +62,7 @@ const s3 = new S3Client({
   forcePathStyle: true, // Required for many S3-compatible providers like Supabase
 });
 
-// Configure disk storage for performance (prevents RAM exhaustion)
-const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB limit (dynamically restricted in route handler)
-});
-
-// --- STARTUP CLEANUP ---
-// Clean up any stray temp files from the uploads directory on startup
-try {
-  const files = fs.readdirSync(uploadDir);
-  for (const file of files) {
-    fs.unlinkSync(path.join(uploadDir, file));
-  }
-  console.log(`[STORAGE] Cleaned up ${files.length} stray temporary files.`);
-} catch (err) {
-  console.error("[STORAGE] Failed to clean uploads directory on startup:", err);
-}
+// Multer setup removed (uploads are handled direct-to-S3)
 
 // --- API ROUTES ---
 
@@ -208,13 +179,14 @@ app.route("/session/:sessionId")
     }
   });
 
-// Upload file to R2 through backend
-// ...
-app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
+// Get pre-signed URL for direct upload to S3/R2
+app.post("/session/:sessionId/upload/presign", async (req, res) => {
   const { sessionId } = req.params;
-  const file = req.file;
+  const { fileName, fileSize, mimeType } = req.body;
 
-  if (!file) return res.status(400).json({ error: "No file uploaded" });
+  if (!fileName || !fileSize || !mimeType) {
+    return res.status(400).json({ error: "Missing required fields (fileName, fileSize, mimeType)" });
+  }
 
   try {
     const filesKey = `session:${sessionId}:files`;
@@ -222,8 +194,7 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
 
     // 1. Enforce individual file size limit
     const maxFileSize = isAdminSession ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
-    if (file.size > maxFileSize) {
-      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    if (fileSize > maxFileSize) {
       return res.status(400).json({ error: `File size exceeds the limit of ${isAdminSession ? "1GB" : "50MB"}.` });
     }
 
@@ -231,7 +202,6 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
     const currentFilesCount = await redis.llen(filesKey);
     const maxFilesCount = isAdminSession ? 100 : 20;
     if (currentFilesCount >= maxFilesCount) {
-      if (fs.existsSync(file.path)) fs.unlinkSync(file.path); // Clean up temp file
       return res.status(400).json({ error: `Session file limit (${maxFilesCount}) reached. Please delete old files.` });
     }
 
@@ -241,49 +211,83 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
     const totalExistingSize = existingFiles.reduce((acc, f) => acc + (f.size || 0), 0);
     const maxTotalStorage = isAdminSession ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
 
-    if (totalExistingSize + file.size > maxTotalStorage) {
-      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    if (totalExistingSize + fileSize > maxTotalStorage) {
       return res.status(400).json({ error: `Session total storage limit (${isAdminSession ? "1GB" : "50MB"}) reached. Please delete old files.` });
     }
 
-    // 4. Hash check for duplicate uploads (Calculate from disk using streams for memory efficiency)
-    const fileHash = await new Promise((resolve, reject) => {
-      const hash = crypto.createHash("sha256");
-      const stream = fs.createReadStream(file.path);
-      stream.on("data", (data) => hash.update(data));
-      stream.on("end", () => resolve(hash.digest("hex")));
-      stream.on("error", (err) => reject(err));
+    // Generate pre-signed PUT URL
+    const fileId = `${Date.now()}-${fileName}`;
+    const s3Key = `${sessionId}/${fileId}`;
+
+    const command = new PutObjectCommand({
+      Bucket: S3_BUCKET_NAME,
+      Key: s3Key,
+      ContentType: mimeType,
+      ContentLength: fileSize,
     });
 
-    if (existingFiles.some(f => f.hash === fileHash)) {
-      if (fs.existsSync(file.path)) fs.unlinkSync(file.path); // Clean up temp file
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 900 }); // Expires in 15 mins
+
+    res.json({ uploadUrl, fileId, s3Key });
+  } catch (error) {
+    console.error("Presign upload error:", error);
+    res.status(500).json({ error: "Failed to generate upload URL" });
+  }
+});
+
+// Confirm direct S3 upload and write metadata to Redis
+app.post("/session/:sessionId/upload/confirm", async (req, res) => {
+  const { sessionId } = req.params;
+  const { fileId, name, size, mimeType, s3Key, hash } = req.body;
+
+  if (!fileId || !name || !size || !mimeType || !s3Key || !hash) {
+    return res.status(400).json({ error: "Missing required metadata for confirmation" });
+  }
+
+  try {
+    const filesKey = `session:${sessionId}:files`;
+    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
+    // 1. Enforce limits on confirmation (defense in depth)
+    const maxFileSize = isAdminSession ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
+    if (size > maxFileSize) {
+      return res.status(400).json({ error: "File size exceeds the limit." });
+    }
+
+    const currentFilesCount = await redis.llen(filesKey);
+    const maxFilesCount = isAdminSession ? 100 : 20;
+    if (currentFilesCount >= maxFilesCount) {
+      return res.status(400).json({ error: "Session file limit reached." });
+    }
+
+    const existingFilesRaw = await redis.lrange(filesKey, 0, -1);
+    const existingFiles = existingFilesRaw.map(f => JSON.parse(f));
+    const totalExistingSize = existingFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+    const maxTotalStorage = isAdminSession ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
+
+    if (totalExistingSize + size > maxTotalStorage) {
+      return res.status(400).json({ error: "Session total storage limit reached." });
+    }
+
+    // 2. Hash check for duplicate uploads
+    if (existingFiles.some(f => f.hash === hash)) {
+      // Clean up the object from S3 since it is a duplicate
+      await s3.send(new DeleteObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: s3Key
+      })).catch(err => console.error("Failed to delete duplicate S3 file:", err));
+      
       return res.status(409).json({ error: "File already uploaded in this session." });
     }
 
-    const fileId = `${Date.now()}-${file.originalname}`;
-    const s3Key = `${sessionId}/${fileId}`;
-
-    // 3. Upload to R2 from disk stream (Better performance)
-    const uploadCommand = new PutObjectCommand({
-      Bucket: S3_BUCKET_NAME,
-      Key: s3Key,
-      Body: fs.createReadStream(file.path),
-      ContentType: file.mimetype,
-      ContentLength: file.size,
-    });
-    await s3.send(uploadCommand);
-
-    // 4. Cleanup local temp file immediately after upload
-    fs.unlinkSync(file.path);
-
     const fileMeta = {
       id: fileId,
-      name: file.originalname,
-      size: file.size,
-      mimeType: file.mimetype,
+      name,
+      size,
+      mimeType,
       uploadedAt: Date.now(),
       s3Key,
-      hash: fileHash,
+      hash,
     };
 
     const expiryTime = isAdminSession ? 86400 * 365 : 86400;
@@ -320,11 +324,8 @@ app.post("/upload/:sessionId", upload.single("file"), async (req, res) => {
 
     res.json(fileMeta);
   } catch (error) {
-    console.error("Upload error:", error);
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path); // Ensure cleanup on error
-    }
-    res.status(500).json({ error: "Upload failed" });
+    console.error("Confirmation error:", error);
+    res.status(500).json({ error: "Failed to confirm upload" });
   }
 });
 

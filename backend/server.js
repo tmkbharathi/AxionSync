@@ -254,7 +254,6 @@ app.post("/session/:sessionId/upload/presign", async (req, res) => {
       Bucket: bucket,
       Key: s3Key,
       ContentType: mimeType,
-      ContentLength: fileSize,
     });
 
     const uploadUrl = await getSignedUrl(client, command, { expiresIn: 900 }); // Expires in 15 mins

@@ -596,19 +596,21 @@ const FileManagerPanel = memo(({
         <div onDrop={onDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} className="relative">
           <div 
             onClick={() => { if (!uploading) fileInputRef.current?.click(); }}
-            className={`w-full py-4 border-2 border-dashed ${isDragOver ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-700/80 text-slate-400"} rounded-xl flex flex-col items-center justify-center gap-2 transition-all overflow-hidden relative group ${uploading ? 'cursor-not-allowed opacity-90' : 'cursor-pointer hover:bg-slate-800/30 hover:border-blue-500/50 hover:text-blue-400'}`}
+            className={`w-full h-28 border-2 border-dashed ${isDragOver ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-700/80 text-slate-400"} rounded-xl flex flex-col items-center justify-center gap-2 transition-all overflow-hidden relative group ${uploading ? 'cursor-not-allowed opacity-90' : 'cursor-pointer hover:bg-slate-800/30 hover:border-blue-500/50 hover:text-blue-400'}`}
             role="button"
             tabIndex={0}
           >
             {uploading ? (
               <div className="absolute inset-0 bg-slate-800/80 flex flex-col items-center justify-center backdrop-blur-sm z-10">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-400 mb-2" />
-                <div className="w-2/3 h-2.5 bg-slate-700 rounded-full overflow-hidden">
-                  <div 
-                    className="h-2.5 bg-blue-500 rounded-full transition-all duration-300 ease-out" 
-                    style={{ width: `${Math.max(uploadProgress, 2)}%` }} 
-                  />
-                </div>
+                <div 
+                  className="rounded-full" 
+                  style={{ 
+                    width: '70%', 
+                    height: '8px', 
+                    background: `linear-gradient(to right, #3b82f6 ${uploadProgress}%, #334155 ${uploadProgress}%)` 
+                  }}
+                />
                 <span className="text-xs mt-2 font-medium text-slate-300">{uploadProgress}%</span>
               </div>
             ) : (
@@ -866,7 +868,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       await axios.put(uploadUrl, file, {
         headers: { "Content-Type": file.type || "application/octet-stream" },
         onUploadProgress: (p) => { 
-          if (p.loaded) {
+          if (p.loaded !== undefined) {
             loadedSizes[index] = p.loaded;
             const currentTotalLoaded = loadedSizes.reduce((a, b) => a + b, 0);
             setUploadProgress(Math.min(100, Math.round((currentTotalLoaded * 100) / totalSize)));

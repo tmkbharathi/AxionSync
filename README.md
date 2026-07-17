@@ -38,6 +38,72 @@ A premium, high-performance real-time data and file synchronization platform. Bu
 
 ---
 
+## 📐 System Architecture
+
+### Component Interaction Diagram
+
+```mermaid
+flowchart TD
+    subgraph Frontend [Next.js Web Client]
+        ClientUI[React Components]
+        SocketClient[Socket.io Client]
+        BrowserAxios[Axios Upload/Download]
+    end
+
+    subgraph Backend [Express API Server]
+        ExpressRouter[Express Endpoints]
+        SocketServer[Socket.io Server]
+        CronJobs[Node-Cron Cleanup]
+        StorageSelector[Storage Client Manager]
+    end
+
+    subgraph Storage [Storage Layer]
+        Redis[(Upstash Redis Cache)]
+        Supabase[(Supabase Storage Standard)]
+        Backblaze[(Backblaze B2 Admin)]
+    end
+
+    ClientUI -->|HTTP POST/GET| ExpressRouter
+    SocketClient <-->|Websockets TCP| SocketServer
+    BrowserAxios -->|Direct HTTP PUT| Supabase
+    BrowserAxios -->|Direct HTTP PUT| Backblaze
+
+    ExpressRouter <-->|Session State / Keys| Redis
+    SocketServer <-->|Active Sessions| Redis
+    CronJobs -.->|Stale Object Cleanups| StorageSelector
+    StorageSelector -->|S3 Commands| Supabase
+    StorageSelector -->|R2 Commands| Backblaze
+```
+
+### File Upload Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Frontend (Browser)
+    participant API as Express Backend
+    participant DB as Redis Cache
+    participant S3 as S3/R2 Storage
+
+    User->>User: Calculate SHA-256 Hash of File
+    User->>API: POST /upload/presign (fileName, fileSize, mimeType)
+    API->>DB: Check room limits (count, storage size)
+    DB-->>API: Limit validation ok
+    API->>S3: PutObjectCommand (Generate Signed Put URL)
+    API-->>User: Return Signed Put URL & s3Key
+    
+    User->>S3: HTTP PUT raw file body to Signed URL
+    S3-->>User: 200 OK (Upload Succeeded)
+    
+    User->>API: POST /upload/confirm (fileId, hash, s3Key, name, size)
+    API->>DB: Check duplicate hash in session
+    API->>DB: Push file meta to Redis list & set session TTL
+    API->>User: Emit "file_uploaded" over WebSockets
+    API-->>User: 200 OK (Metadata Saved)
+```
+
+---
+
 ## 🚀 Getting Started
 
 ### 1. Repository Setup

@@ -483,7 +483,8 @@ const FileManagerPanel = memo(({
   processFiles,
   handleDownloadFile,
   handleDeleteFile,
-  setIsFilePanelCollapsed
+  setIsFilePanelCollapsed,
+  isAdminSession
 }: { 
   files: FileMeta[], 
   uploading: boolean, 
@@ -493,7 +494,8 @@ const FileManagerPanel = memo(({
   processFiles: (files: File[]) => void,
   handleDownloadFile: (f: FileMeta) => void,
   handleDeleteFile: (f: FileMeta) => void,
-  setIsFilePanelCollapsed: (v: boolean) => void
+  setIsFilePanelCollapsed: (v: boolean) => void,
+  isAdminSession: boolean
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -612,7 +614,7 @@ const FileManagerPanel = memo(({
             ) : (
               <>
                 <div className="p-3 bg-slate-800 rounded-full group-hover:scale-110 transition-transform"><UploadCloud className="w-5 h-5 text-slate-300" /></div>
-                <span className="text-sm font-medium">Click or Drag to Upload (Max 50MB)</span>
+                <span className="text-sm font-medium">Click or Drag to Upload (Max {isAdminSession ? "1GB" : "50MB"})</span>
               </>
             )}
           </div>
@@ -1117,6 +1119,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           handleDownloadFile={handleDownloadFile}
           handleDeleteFile={handleDeleteFile}
           setIsFilePanelCollapsed={setIsFilePanelCollapsed}
+          isAdminSession={sessionId === ADMIN_SESSION_ID}
         />
       </main>
 

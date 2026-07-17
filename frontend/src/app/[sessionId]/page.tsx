@@ -885,7 +885,12 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
     const failed = results.filter(r => r.status === 'rejected');
     if (failed.length > 0) {
-      alert(`${failed.length} file(s) failed to upload.`);
+      results.forEach((r, idx) => {
+        if (r.status === 'rejected') {
+          console.error(`Upload failed for file "${validFiles[idx].name}":`, r.reason);
+        }
+      });
+      alert(`${failed.length} file(s) failed to upload. Check browser console (F12) for detailed errors.`);
     }
     
     setUploading(false);

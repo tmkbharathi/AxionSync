@@ -16,6 +16,8 @@ export const metadata: Metadata = {
   description: siteConfig.description,
 };
 
+import { PerformanceProvider } from "@/context/PerformanceContext";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -27,9 +29,11 @@ export default function RootLayout({
         className={`${outfit.className} bg-slate-950 text-slate-50 antialiased`}
         style={{ backgroundColor: '#020617' }}
       >
-        <SkipLink />
-        <CustomCursor />
-        {children}
+        <PerformanceProvider>
+          <SkipLink />
+          <CustomCursor />
+          {children}
+        </PerformanceProvider>
       </body>
     </html>
   );

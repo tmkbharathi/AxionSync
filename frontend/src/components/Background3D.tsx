@@ -3,6 +3,7 @@
 import { useRef, useMemo, useEffect, memo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
+import { usePerformance } from "@/context/PerformanceContext";
 
 // Animated Particle Background using Three.js (Memoized to prevent unnecessary re-renders)
 const StarBackground = memo(function StarBackground({ isStatic, ...props }: any) {
@@ -85,6 +86,10 @@ const StarBackground = memo(function StarBackground({ isStatic, ...props }: any)
 
 // Memoized 3D Scene Wrapper to isolate rendering from UI state changes
 export const Background3D = memo(function Background3D({ isStatic = false }: { isStatic?: boolean }) {
+  const { isStaticBackground } = usePerformance();
+
+  if (isStaticBackground) return null;
+
   return (
     <div className="fixed inset-0 pointer-events-none">
       <Canvas

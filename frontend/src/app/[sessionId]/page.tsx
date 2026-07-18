@@ -18,6 +18,7 @@ import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { OnboardingTour, TourLauncher } from "@/components/OnboardingTour";
+import PerformanceSettings from "@/components/PerformanceSettings";
 
 // Dynamic imports for heavy components
 const Background3D = dynamic(() => import("@/components/Background3D").then(mod => mod.Background3D), { 
@@ -1140,6 +1141,8 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative selection:bg-blue-500/30">
       
+      {/* Floating Performance Settings */}
+      <PerformanceSettings />
       
       {/* Background Decor */}
       <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px] pointer-events-none -translate-x-1/2 -translate-y-1/2" />

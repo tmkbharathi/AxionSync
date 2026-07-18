@@ -23,7 +23,7 @@ html, body {
   }
 
   @media (any-pointer: fine) {
-    body {
+    html:not(.no-custom-cursor) body {
       cursor: none;
     }
   }
@@ -76,12 +76,14 @@ html, body {
 
 
 @media (any-pointer: fine) {
-  html {
+  html:not(.no-custom-cursor) {
     cursor: none;
   }
 
   /* Force hide cursor on interactive elements to prevent flickering, but allow text cursor for inputs */
-  a, button, [role="button"] {
+  html:not(.no-custom-cursor) a, 
+  html:not(.no-custom-cursor) button, 
+  html:not(.no-custom-cursor) [role="button"] {
     cursor: none !important;
   }
 

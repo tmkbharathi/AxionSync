@@ -12,6 +12,7 @@ import { Points, PointMaterial } from "@react-three/drei";
 import { siteConfig } from "@/config/site";
 import { Background3D } from "@/components/Background3D";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import PerformanceSettings from "@/components/PerformanceSettings";
 import { OnboardingTour, TourLauncher } from "@/components/OnboardingTour";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -203,6 +204,9 @@ function Home() {
 
       {/* Modern Three.js Particle Container (Isolated for Performance) */}
       <Background3D />
+
+      {/* Floating Performance Settings */}
+      <PerformanceSettings />
 
       <div className="relative z-10 w-full max-w-5xl px-6 py-6 lg:px-8 flex flex-col items-center">
 

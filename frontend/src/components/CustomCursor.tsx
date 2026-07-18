@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import { motion, useSpring, useMotionValue } from "framer-motion";
+import { usePerformance } from "@/context/PerformanceContext";
 
 export default function CustomCursor() {
+  const { disableCustomCursor } = usePerformance();
   const [hasFinePointer, setHasFinePointer] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -107,7 +109,7 @@ export default function CustomCursor() {
     setMounted(true);
   }, []);
 
-  if (!mounted || !hasFinePointer) return null;
+  if (!mounted || !hasFinePointer || disableCustomCursor) return null;
 
   return (
     <>

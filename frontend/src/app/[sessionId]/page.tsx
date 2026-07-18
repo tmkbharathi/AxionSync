@@ -12,7 +12,7 @@ import {
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
   Info, Monitor, Tablet, Globe, Share2, Sparkles, HelpCircle,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
-  ChevronsRight, ChevronsLeft, AlertTriangle, Plus, Minus, Lock, LogOut
+  ChevronsRight, ChevronsLeft, AlertTriangle, Plus, Minus, Lock, LogOut, ArrowRight
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
@@ -1371,38 +1371,66 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       <AnimatePresence>
         {showTourBanner && !isTourActive && (
           <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="fixed bottom-24 right-6 w-full max-w-[320px] bg-slate-900/90 backdrop-blur-xl border border-blue-500/20 p-5 rounded-2xl shadow-2xl flex flex-col gap-3 pointer-events-auto z-30 animate-bounce-subtle"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-blue-950/70 backdrop-blur-[6px]"
           >
-            <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-wider">
-              <Sparkles className="w-4 h-4 text-blue-400 animate-pulse" />
-              Quick Tutorial
-            </div>
-            <p className="text-slate-300 text-xs leading-relaxed">
-              Let's take a 1-minute interactive tour to understand how to use this clipboard sync and file sharing workspace!
-            </p>
-            <div className="flex items-center gap-2 mt-1">
-              <button
-                onClick={() => {
-                  setIsTourActive(true);
-                  setShowTourBanner(false);
-                }}
-                className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all cursor-none"
-              >
-                Start Tour
-              </button>
-              <button
-                onClick={() => {
-                  localStorage.setItem("syncosync:tour:session", "completed");
-                  setShowTourBanner(false);
-                }}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-none"
-              >
-                Dismiss
-              </button>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-[360px] bg-slate-900/90 backdrop-blur-xl border border-blue-500/20 p-6 rounded-3xl shadow-2xl flex flex-col gap-4 text-left select-none text-white relative z-50"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-blue-500/20 border border-blue-500/30">
+                    <Sparkles className="w-4 h-4 text-blue-400 animate-pulse" />
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Quick Tutorial</span>
+                </div>
+                <button
+                  onClick={() => {
+                    localStorage.setItem("syncosync:tour:session", "completed");
+                    setShowTourBanner(false);
+                  }}
+                  className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 rounded-full transition-all cursor-none"
+                  aria-label="Close modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div>
+                <h4 className="text-base font-bold text-white mb-1.5">Welcome to your Sync Room! 🚀</h4>
+                <p className="text-slate-300 text-xs leading-relaxed font-normal">
+                  Let's take a 1-minute interactive tour to understand how to use this clipboard sync and file sharing workspace!
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 mt-1">
+                <button
+                  onClick={() => {
+                    setIsTourActive(true);
+                    setShowTourBanner(false);
+                  }}
+                  className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5 cursor-none"
+                >
+                  Start Tour
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    localStorage.setItem("syncosync:tour:session", "completed");
+                    setShowTourBanner(false);
+                  }}
+                  className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-none"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

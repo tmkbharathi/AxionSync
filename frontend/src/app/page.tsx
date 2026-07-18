@@ -160,9 +160,9 @@ function Home() {
   return (
     <div className="relative min-h-screen bg-slate-950 text-white overflow-hidden flex flex-col justify-center items-center select-none">
 
-      {/* Top Right Navigation & Help Buttons */}
-      <div className="fixed top-6 right-8 z-50 flex flex-col gap-2 items-end">
-        {/* GitHub Link */}
+      {/* Top Navigation & Help Buttons */}
+      {/* GitHub Link */}
+      <div className="fixed top-6 right-8 z-50">
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 0.6, x: 0 }}
@@ -184,10 +184,12 @@ function Home() {
             <span className="hidden sm:inline">Repository</span>
           </a>
         </motion.div>
+      </div>
 
-        {/* How It Works Tour Trigger */}
+      {/* Take a Tour Trigger */}
+      <div className="fixed top-6 left-6 sm:left-auto sm:right-8 sm:top-[70px] z-50">
         <motion.div
-          initial={{ opacity: 0, x: 20 }}
+          initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 0.6, x: 0 }}
           whileHover={{ opacity: 1, scale: 1.05 }}
           transition={{ delay: 0.1 }}
@@ -197,7 +199,7 @@ function Home() {
             className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-blue-400 transition-all border border-slate-800 hover:border-blue-500/30 bg-slate-900/40 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl group cursor-none font-sans"
           >
             <Sparkles className="w-4 h-4 text-slate-500 group-hover:text-blue-400 transition-colors" />
-            <span className="hidden sm:inline">How it works</span>
+            <span className="hidden sm:inline">Take a Tour</span>
           </button>
         </motion.div>
       </div>
@@ -582,38 +584,66 @@ function Home() {
       <AnimatePresence>
         {showTourBanner && !isTourActive && (
           <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="fixed bottom-6 right-6 w-full max-w-[320px] bg-slate-900/90 backdrop-blur-xl border border-blue-500/20 p-5 rounded-2xl shadow-2xl flex flex-col gap-3 pointer-events-auto z-30"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-blue-950/70 backdrop-blur-[6px]"
           >
-            <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-wider">
-              <Sparkles className="w-4 h-4 text-blue-400 animate-pulse" />
-              Quick Tutorial
-            </div>
-            <p className="text-slate-300 text-xs leading-relaxed">
-              New to AxionSync? Let's take a 1-minute interactive tour to see how to sync your clipboard and files!
-            </p>
-            <div className="flex items-center gap-2 mt-1">
-              <button
-                onClick={() => {
-                  setIsTourActive(true);
-                  setShowTourBanner(false);
-                }}
-                className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all cursor-none"
-              >
-                Start Tour
-              </button>
-              <button
-                onClick={() => {
-                  localStorage.setItem("syncosync:tour:landing", "completed");
-                  setShowTourBanner(false);
-                }}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-none"
-              >
-                Dismiss
-              </button>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-[360px] bg-slate-900/90 backdrop-blur-xl border border-blue-500/20 p-6 rounded-3xl shadow-2xl flex flex-col gap-4 text-left select-none text-white relative z-50"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-blue-500/20 border border-blue-500/30">
+                    <Sparkles className="w-4 h-4 text-blue-400 animate-pulse" />
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Quick Tutorial</span>
+                </div>
+                <button
+                  onClick={() => {
+                    localStorage.setItem("syncosync:tour:landing", "completed");
+                    setShowTourBanner(false);
+                  }}
+                  className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 rounded-full transition-all cursor-none"
+                  aria-label="Close modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div>
+                <h4 className="text-base font-bold text-white mb-1.5">Welcome! Let's take a tour 👋</h4>
+                <p className="text-slate-300 text-xs leading-relaxed font-normal">
+                  New to AxionSync? Let's take a 1-minute interactive tour to see how to sync your clipboard and files!
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 mt-1">
+                <button
+                  onClick={() => {
+                    setIsTourActive(true);
+                    setShowTourBanner(false);
+                  }}
+                  className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5 cursor-none"
+                >
+                  Start Tour
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    localStorage.setItem("syncosync:tour:landing", "completed");
+                    setShowTourBanner(false);
+                  }}
+                  className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-none"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

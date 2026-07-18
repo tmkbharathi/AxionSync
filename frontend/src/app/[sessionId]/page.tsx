@@ -10,13 +10,14 @@ import { v4 as uuidv4 } from "uuid";
 import { 
   Copy, CheckCircle, Check, UploadCloud, Cloud, X, Download, Trash2, Link, 
   Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
-  Info, Monitor, Tablet, Globe, Share2,
+  Info, Monitor, Tablet, Globe, Share2, Sparkles, HelpCircle,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
   ChevronsRight, ChevronsLeft, AlertTriangle, Plus, Minus, Lock, LogOut
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { siteConfig } from "@/config/site";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { OnboardingTour, TourLauncher } from "@/components/OnboardingTour";
 
 // Dynamic imports for heavy components
 const Background3D = dynamic(() => import("@/components/Background3D").then(mod => mod.Background3D), { 
@@ -219,7 +220,8 @@ const SessionHeader = memo(({
   handleCopyLink, 
   copiedLink,
   handleDeleteSession,
-  isPro
+  isPro,
+  onStartTour
 }: { 
   connected: boolean, 
   roomSize: number, 
@@ -229,7 +231,8 @@ const SessionHeader = memo(({
   handleCopyLink: () => void, 
   copiedLink: boolean,
   handleDeleteSession: () => void,
-  isPro: boolean
+  isPro: boolean,
+  onStartTour: () => void
 }) => {
   return (
     <header className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-800/60 bg-slate-900/40 backdrop-blur-md z-10">
@@ -243,7 +246,7 @@ const SessionHeader = memo(({
           </div>
           <div className="text-xs text-slate-400 flex items-center gap-1 sm:gap-2">
             <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
-            <div className="flex items-center gap-1.5">
+            <div id="tour-presence" className="flex items-center gap-1.5">
               <span>{connected ? `${roomSize} Connected` : 'System Online'}</span>
               {connected && (
                 <button 
@@ -262,6 +265,18 @@ const SessionHeader = memo(({
 
       <div className="flex items-center gap-1.5 sm:gap-3 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
         <button 
+          onClick={onStartTour}
+          className="p-2 hover:bg-slate-700 rounded-md transition-colors text-slate-300 hover:text-white"
+          title="Show Room Guide"
+          aria-label="Start Onboarding Tour"
+        >
+          <HelpCircle className="w-4 h-4" />
+        </button>
+
+        <div className="h-4 w-px bg-slate-700" />
+
+        <button 
+          id="tour-qr"
           onClick={() => setShowQr(true)}
           className="p-2 hover:bg-slate-700 rounded-md transition-colors text-slate-300 hover:text-white"
           title="Show QR Code"
@@ -279,6 +294,7 @@ const SessionHeader = memo(({
         <div className="h-4 w-px bg-slate-700" />
 
         <button 
+          id="tour-share"
           onClick={handleCopyLink}
           className={`flex items-center gap-2 px-2 sm:px-4 py-2 transition-all rounded-md font-bold text-xs border ${copiedLink ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/20 shadow-lg shadow-blue-500/5'}`}
         >
@@ -289,6 +305,7 @@ const SessionHeader = memo(({
         <div className="h-4 w-px bg-slate-700" />
         
         <button 
+          id="tour-delete"
           onClick={handleDeleteSession}
           className={`p-2 rounded-md transition-colors flex items-center gap-2 ${isPro ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400' : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400'}`}
           title={isPro ? "Logout Session" : "Delete Session"}
@@ -443,6 +460,7 @@ const ClipboardPanel = memo(({
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold text-slate-200">Clipboard</h2>
           <button 
+            id="tour-mic"
             onClick={toggleListening}
             className={`p-1.5 rounded text-white transition-colors border ${isListening ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'}`}
           >
@@ -459,7 +477,7 @@ const ClipboardPanel = memo(({
           <span className="hidden sm:inline">{copiedText ? 'Copied!' : 'Copy All'}</span>
         </button>
       </div>
-      <div className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all shadow-inner">
+      <div id="tour-clipboard" className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all shadow-inner">
         <textarea
           id="main-content"
           value={text}
@@ -593,7 +611,7 @@ const FileManagerPanel = memo(({
           </div>
         </div>
         <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-        <div onDrop={onDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} className="relative">
+        <div id="tour-files" onDrop={onDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} className="relative">
           <div 
             onClick={() => { if (!uploading) fileInputRef.current?.click(); }}
             className={`w-full h-28 border-2 border-dashed ${isDragOver ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-700/80 text-slate-400"} rounded-xl flex flex-col items-center justify-center gap-2 transition-all overflow-hidden relative group ${uploading ? 'cursor-not-allowed opacity-90' : 'cursor-pointer hover:bg-slate-800/30 hover:border-blue-500/50 hover:text-blue-400'}`}
@@ -698,6 +716,57 @@ const FileManagerPanel = memo(({
   );
 });
 
+// Tour Steps Configuration for Session Room
+const SESSION_TOUR_STEPS = [
+  {
+    title: "Welcome to your Sync Room! 🚀",
+    description: "This is a private, real-time workspace. Any device that joins this room can instantly sync clipboard text and files with you.",
+    position: "center" as const
+  },
+  {
+    targetId: "tour-qr",
+    title: "Scan to Join 📱",
+    description: "Click here to display a QR code. Scan it with your phone's camera to instantly join this exact room and start sharing.",
+    position: "bottom" as const
+  },
+  {
+    targetId: "tour-share",
+    title: "Share Room Link 🔗",
+    description: "Click this button to copy the room's direct link. Send it to anyone or open it on another device to sync.",
+    position: "bottom" as const
+  },
+  {
+    targetId: "tour-presence",
+    title: "Active Devices Presence 💻",
+    description: "This shows how many devices are currently active in this room. Click the info icon to see browser and device details.",
+    position: "bottom" as const
+  },
+  {
+    targetId: "tour-clipboard",
+    title: "Instant Clipboard Sync ⚡",
+    description: "Type or paste text here. Any changes are synced immediately across all connected screens in real-time.",
+    position: "bottom" as const
+  },
+  {
+    targetId: "tour-mic",
+    title: "Speech-to-Text Voice Sync 🎙️",
+    description: "Click the mic button to type hands-free! Voice input will automatically sync to all devices.",
+    position: "bottom" as const
+  },
+  {
+    targetId: "tour-files",
+    title: "Real-time File Vault 📁",
+    description: "Drag & drop or click to upload files (up to 50MB). Connected devices can view and download them instantly.",
+    position: "left" as const
+  },
+  {
+    targetId: "tour-delete",
+    title: "Delete / Wipe Session 🗑️",
+    description: "Wipe all text and files and permanently close the session for all participants instantly.",
+    position: "bottom" as const
+  }
+];
+
 export default function SessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = use(params);
   const router = useRouter();
@@ -737,6 +806,19 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [adminPasswordValue, setAdminPasswordValue] = useState("");
   const [adminAuthError, setAdminAuthError] = useState(false);
+
+  const [isTourActive, setIsTourActive] = useState(false);
+  const [showTourBanner, setShowTourBanner] = useState(false);
+
+  useEffect(() => {
+    if (hasMounted && isAdminUnlocked && !isValidating && !sessionError) {
+      const isCompleted = localStorage.getItem("syncosync:tour:session");
+      if (!isCompleted) {
+        const timer = setTimeout(() => setShowTourBanner(true), 2500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [hasMounted, isAdminUnlocked, isValidating, sessionError]);
 
   // Sync state if sessionId changes (though sessionId is usually static in this route)
   useEffect(() => {
@@ -1073,6 +1155,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         copiedLink={copiedLink}
         handleDeleteSession={handleDeleteSession}
         isPro={sessionId === ADMIN_SESSION_ID}
+        onStartTour={() => setIsTourActive(true)}
       />
 
       {/* Mobile Tabs */}
@@ -1273,6 +1356,54 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           </div>
         )}
       </AnimatePresence>
+      {/* Onboarding Tour Components */}
+      <OnboardingTour
+        tourKey="session"
+        steps={SESSION_TOUR_STEPS}
+        isActive={isTourActive}
+        onClose={() => setIsTourActive(false)}
+      />
+
+      {/* Tour Banner slide-in invitation */}
+      <AnimatePresence>
+        {showTourBanner && !isTourActive && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-24 right-6 w-full max-w-[320px] bg-slate-900/90 backdrop-blur-xl border border-blue-500/20 p-5 rounded-2xl shadow-2xl flex flex-col gap-3 pointer-events-auto z-30 animate-bounce-subtle"
+          >
+            <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-wider">
+              <Sparkles className="w-4 h-4 text-blue-400 animate-pulse" />
+              Quick Tutorial
+            </div>
+            <p className="text-slate-300 text-xs leading-relaxed">
+              Let's take a 1-minute interactive tour to understand how to use this clipboard sync and file sharing workspace!
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <button
+                onClick={() => {
+                  setIsTourActive(true);
+                  setShowTourBanner(false);
+                }}
+                className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all cursor-none"
+              >
+                Start Tour
+              </button>
+              <button
+                onClick={() => {
+                  localStorage.setItem("syncosync:tour:session", "completed");
+                  setShowTourBanner(false);
+                }}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-none"
+              >
+                Dismiss
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

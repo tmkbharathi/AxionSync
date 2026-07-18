@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { Copy, ArrowRight, Cloud, Shield, Zap, CheckCircle2, Heart, Lock, Unlock, ShieldCheck, Star, Crown, ChevronDown, Eye, EyeOff, X } from "lucide-react";
+import { Copy, ArrowRight, Cloud, Shield, Zap, CheckCircle2, Heart, Lock, Unlock, ShieldCheck, Star, Crown, ChevronDown, Eye, EyeOff, X, Sparkles } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import { useState, useRef, useMemo, useEffect, memo } from "react";
@@ -12,6 +12,7 @@ import { Points, PointMaterial } from "@react-three/drei";
 import { siteConfig } from "@/config/site";
 import { Background3D } from "@/components/Background3D";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { OnboardingTour, TourLauncher } from "@/components/OnboardingTour";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -20,6 +21,27 @@ const ADMIN_SESSION_ID = process.env.NEXT_PUBLIC_ADMIN_SESSION_ID;
 const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
 
 // 3D components removed (moved to shared components)
+
+// Tour Steps Configuration
+const LANDING_TOUR_STEPS = [
+  {
+    title: "Welcome to AxionSync! 👋",
+    description: "AxionSync is a high-performance, real-time digital workspace that instantly shares clipboard text and files across devices. No accounts required.",
+    position: "center" as const
+  },
+  {
+    targetId: "tour-new-session",
+    title: "Start a New Session ⚡",
+    description: "Create a temporary, private workspace room. Devices in this room will sync with each other instantly.",
+    position: "bottom" as const
+  },
+  {
+    targetId: "tour-join-session",
+    title: "Join an Existing Room 🔗",
+    description: "Enter an 8-character room key from your other device here to instantly establish a connection.",
+    position: "bottom" as const
+  }
+];
 
 function Home() {
   const router = useRouter();
@@ -38,6 +60,19 @@ function Home() {
   const [adminError, setAdminError] = useState(false);
   const [isProHovered, setIsProHovered] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const [isTourActive, setIsTourActive] = useState(false);
+  const [showTourBanner, setShowTourBanner] = useState(false);
+
+  useEffect(() => {
+    // Show banner only if they haven't completed the tour before
+    const isCompleted = localStorage.getItem("syncosync:tour:landing");
+    if (!isCompleted) {
+      // Small delay for nice entrance
+      const timer = setTimeout(() => setShowTourBanner(true), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   const handleCloseAdminModal = () => {
     setShowAdminModal(false);
@@ -124,29 +159,47 @@ function Home() {
   return (
     <div className="relative min-h-screen bg-slate-950 text-white overflow-hidden flex flex-col justify-center items-center select-none">
 
-      {/* Top Right GitHub Link */}
-      <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 0.6, x: 0 }}
-        whileHover={{ opacity: 1, scale: 1.05 }}
-        className="fixed top-6 right-8 z-50"
-      >
-        <a
-          href={siteConfig.links.github}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all border border-slate-800 hover:border-slate-700 bg-slate-900/40 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl group"
+      {/* Top Right Navigation & Help Buttons */}
+      <div className="fixed top-6 right-8 z-50 flex flex-col gap-2 items-end">
+        {/* GitHub Link */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 0.6, x: 0 }}
+          whileHover={{ opacity: 1, scale: 1.05 }}
         >
-          <svg
-            viewBox="0 0 24 24"
-            className="w-4 h-4 fill-current transition-transform group-hover:scale-110"
-            aria-hidden="true"
+          <a
+            href={siteConfig.links.github}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all border border-slate-800 hover:border-slate-700 bg-slate-900/40 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl group"
           >
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-          </svg>
-          <span className="hidden sm:inline">Repository</span>
-        </a>
-      </motion.div>
+            <svg
+              viewBox="0 0 24 24"
+              className="w-4 h-4 fill-current transition-transform group-hover:scale-110"
+              aria-hidden="true"
+            >
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+            </svg>
+            <span className="hidden sm:inline">Repository</span>
+          </a>
+        </motion.div>
+
+        {/* How It Works Tour Trigger */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 0.6, x: 0 }}
+          whileHover={{ opacity: 1, scale: 1.05 }}
+          transition={{ delay: 0.1 }}
+        >
+          <button
+            onClick={() => setIsTourActive(true)}
+            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-blue-400 transition-all border border-slate-800 hover:border-blue-500/30 bg-slate-900/40 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl group cursor-none font-sans"
+          >
+            <Sparkles className="w-4 h-4 text-slate-500 group-hover:text-blue-400 transition-colors" />
+            <span className="hidden sm:inline">How it works</span>
+          </button>
+        </motion.div>
+      </div>
 
       {/* Modern Three.js Particle Container (Isolated for Performance) */}
       <Background3D />
@@ -251,6 +304,7 @@ function Home() {
 
           {/* Create Section */}
           <motion.button
+            id="tour-new-session"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={handleStart}
@@ -265,7 +319,7 @@ function Home() {
           <div className="hidden sm:block w-px h-8 bg-slate-800" />
 
           {/* Join Section */}
-          <div className="w-full sm:w-auto flex-[1.5] relative">
+          <div id="tour-join-session" className="w-full sm:w-auto flex-[1.5] relative">
             <form onSubmit={handleJoin} className="relative w-full">
 
               <input
@@ -511,6 +565,55 @@ function Home() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Onboarding Tour Components */}
+      <OnboardingTour
+        tourKey="landing"
+        steps={LANDING_TOUR_STEPS}
+        isActive={isTourActive}
+        onClose={() => setIsTourActive(false)}
+      />
+
+      {/* Tour Banner slide-in invitation */}
+      <AnimatePresence>
+        {showTourBanner && !isTourActive && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-6 right-6 w-full max-w-[320px] bg-slate-900/90 backdrop-blur-xl border border-blue-500/20 p-5 rounded-2xl shadow-2xl flex flex-col gap-3 pointer-events-auto z-30"
+          >
+            <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-wider">
+              <Sparkles className="w-4 h-4 text-blue-400 animate-pulse" />
+              Quick Tutorial
+            </div>
+            <p className="text-slate-300 text-xs leading-relaxed">
+              New to AxionSync? Let's take a 1-minute interactive tour to see how to sync your clipboard and files!
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <button
+                onClick={() => {
+                  setIsTourActive(true);
+                  setShowTourBanner(false);
+                }}
+                className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all cursor-none"
+              >
+                Start Tour
+              </button>
+              <button
+                onClick={() => {
+                  localStorage.setItem("syncosync:tour:landing", "completed");
+                  setShowTourBanner(false);
+                }}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-none"
+              >
+                Dismiss
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

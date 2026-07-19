@@ -51,6 +51,31 @@ app.get("/", (req, res) => {
 // Health check for Render
 app.get("/health", (req, res) => res.send("OK"));
 
+// Unlock Session Passcode Endpoint
+app.post("/session/:sessionId/unlock", async (req, res) => {
+  const { sessionId } = req.params;
+  const { password } = req.body;
+
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+  if (!isAdminSession) {
+    return res.status(400).json({ error: "This session does not require unlocking." });
+  }
+
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "tmkbharathi";
+  if (password === ADMIN_PASSWORD) {
+    // Generate secure random token
+    const token = require("crypto").randomBytes(16).toString("hex");
+    const tokenKey = `session:${sessionId}:token`;
+    
+    // Store in Redis with 24 hours TTL
+    await redis.set(tokenKey, token, "EX", 86400);
+
+    return res.json({ success: true, token });
+  } else {
+    return res.status(401).json({ error: "Invalid passcode." });
+  }
+});
+
 // Session Routes
 app.route("/session/:sessionId")
   .get(async (req, res) => {
@@ -61,6 +86,19 @@ app.route("/session/:sessionId")
       const filesKey = `session:${sessionId}:files`;
       const lastActiveKey = `session:${sessionId}:last_active`;
 
+      const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
+      // Security validation: Require token for the admin session
+      if (isAdminSession) {
+        const authHeader = req.headers.authorization;
+        const token = authHeader && authHeader.split(" ")[1];
+        const storedToken = await redis.get(`session:${sessionId}:token`);
+
+        if (!token || token !== storedToken) {
+          return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+        }
+      }
+
       // Optimized: Use pipeline for initial check
       const [[, isActive], [, text], [, filesCount], [, isPurged]] = await redis.pipeline()
         .exists(activeKey)
@@ -68,8 +106,6 @@ app.route("/session/:sessionId")
         .llen(filesKey)
         .get(`session:${sessionId}:purged_empty`)
         .exec();
-
-      const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
       if (!isActive && text === null && filesCount === 0) {
         if (isAdminSession) {
@@ -90,7 +126,6 @@ app.route("/session/:sessionId")
         ? await Promise.all(
           filesRaw.map(async (f) => {
             const file = JSON.parse(f);
-            // Add signed preview URL for images
             if (file.mimeType && file.mimeType.startsWith("image/")) {
               try {
                 const { client, bucket } = getStorageClientAndBucket(sessionId);
@@ -137,6 +172,19 @@ app.route("/session/:sessionId")
       const textKey = `session:${sessionId}:text`;
       const filesKey = `session:${sessionId}:files`;
 
+      const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
+      // Security validation: Require token for the admin session deletion
+      if (isAdminSession) {
+        const authHeader = req.headers.authorization;
+        const token = authHeader && authHeader.split(" ")[1];
+        const storedToken = await redis.get(`session:${sessionId}:token`);
+
+        if (!token || token !== storedToken) {
+          return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+        }
+      }
+
       // 1. Get all files to delete from S3
       const filesRaw = await redis.lrange(filesKey, 0, -1);
       const files = filesRaw.map(f => {
@@ -153,7 +201,7 @@ app.route("/session/:sessionId")
       ));
 
       // 2. Delete all keys from Redis
-      await redis.del(activeKey, textKey, filesKey, `session:${sessionId}:last_active`, `session:${sessionId}:purged_empty`);
+      await redis.del(activeKey, textKey, filesKey, `session:${sessionId}:last_active`, `session:${sessionId}:purged_empty`, `session:${sessionId}:token`);
       await redis.srem(ALL_SESSIONS_KEY, sessionId);
 
       // 3. Notify all clients in the session
@@ -175,9 +223,21 @@ app.post("/session/:sessionId/upload/presign", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields (fileName, fileSize, mimeType)" });
   }
 
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
+  // Security validation: Require token for uploading in admin session
+  if (isAdminSession) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(" ")[1];
+    const storedToken = await redis.get(`session:${sessionId}:token`);
+
+    if (!token || token !== storedToken) {
+      return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+    }
+  }
+
   try {
     const filesKey = `session:${sessionId}:files`;
-    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
     // 1. Enforce individual file size limit
     const maxFileSize = isAdminSession ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
@@ -226,7 +286,7 @@ app.post("/session/:sessionId/upload/presign", async (req, res) => {
   }
 });
 
-// Confirm direct S3 upload and write metadata to Redis (With Security Check)
+// Confirm S3 upload and write metadata to Redis
 app.post("/session/:sessionId/upload/confirm", async (req, res) => {
   const { sessionId } = req.params;
   const { fileId, name, size, mimeType, s3Key, hash } = req.body;
@@ -240,9 +300,21 @@ app.post("/session/:sessionId/upload/confirm", async (req, res) => {
     return res.status(400).json({ error: "Invalid S3 key path structure." });
   }
 
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
+  // Security validation: Require token for uploading in admin session
+  if (isAdminSession) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(" ")[1];
+    const storedToken = await redis.get(`session:${sessionId}:token`);
+
+    if (!token || token !== storedToken) {
+      return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+    }
+  }
+
   try {
     const filesKey = `session:${sessionId}:files`;
-    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
     // Security Check 2: HeadObject check to verify object exists & size matches
     const { client, bucket } = getStorageClientAndBucket(sessionId);
@@ -263,7 +335,7 @@ app.post("/session/:sessionId/upload/confirm", async (req, res) => {
       return res.status(404).json({ error: "File not found in storage. Upload might have failed or aborted." });
     }
 
-    // 1. Enforce limits on confirmation (defense in depth)
+    // 1. Enforce limits on confirmation
     const maxFileSize = isAdminSession ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
     if (size > maxFileSize) {
       return res.status(400).json({ error: "File size exceeds the limit." });
@@ -365,6 +437,19 @@ app.get("/download", async (req, res) => {
       return res.status(403).json({ error: "Session has expired or is unauthorized." });
     }
 
+    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
+    // Security validation: Require token for downloading in admin session
+    if (isAdminSession) {
+      const authHeader = req.headers.authorization;
+      const token = authHeader && authHeader.split(" ")[1];
+      const storedToken = await redis.get(`session:${sessionId}:token`);
+
+      if (!token || token !== storedToken) {
+        return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+      }
+    }
+
     const { client, bucket } = getStorageClientAndBucket(sessionId);
 
     const command = new GetObjectCommand({
@@ -413,7 +498,25 @@ app.use((req, res) => {
 // --- WEBSOCKETS ---
 
 io.on("connection", (socket) => {
-  socket.on("join_session", async ({ sessionId, deviceInfo, persistentDeviceId }) => {
+  socket.on("join_session", async ({ sessionId, token, deviceInfo, persistentDeviceId }) => {
+    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
+    // Security validation: Require token for joining the admin session WebSocket
+    if (isAdminSession) {
+      try {
+        const storedToken = await redis.get(`session:${sessionId}:token`);
+        if (!token || token !== storedToken) {
+          socket.emit("unauthorized", { message: "Invalid session token. Passcode required." });
+          socket.disconnect();
+          return;
+        }
+      } catch (err) {
+        console.error("Redis token check failed on join_session:", err);
+        socket.disconnect();
+        return;
+      }
+    }
+
     socket.join(sessionId);
     socket.sessionId = sessionId;
     socket.persistentDeviceId = persistentDeviceId;
@@ -421,8 +524,6 @@ io.on("connection", (socket) => {
 
     // Refresh overall session expiry on join
     try {
-      const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
-      
       const activeExpiry = isAdminSession ? 86400 * 365 : 86400;      // 1 year or 24 hours
       const metadataExpiry = isAdminSession ? 86400 * 365 : 86400 * 2; // 1 year or 48 hours
 
@@ -529,7 +630,6 @@ io.on("connection", (socket) => {
 });
 
 // --- CRON JOBS FOR AUTO CLEANUP ---
-// Runs hourly: deletes inactive/stale files and sessions
 cron.schedule("0 * * * *", async () => {
   await runHourlyCleanup(io);
 });

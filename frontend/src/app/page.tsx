@@ -19,7 +19,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 // Admin Credentials
 const ADMIN_SESSION_ID = process.env.NEXT_PUBLIC_ADMIN_SESSION_ID;
-const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
 
 // 3D components removed (moved to shared components)
 
@@ -59,6 +58,7 @@ function Home() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
   const [isProHovered, setIsProHovered] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -503,21 +503,21 @@ function Home() {
 
               <motion.div
                 animate={{
-                  backgroundColor: adminPassword === ADMIN_PASSWORD ? "rgba(16, 185, 129, 0.15)" : "rgba(37, 99, 235, 0.15)",
-                  borderColor: adminPassword === ADMIN_PASSWORD ? "rgba(16, 185, 129, 0.3)" : "rgba(37, 99, 235, 0.3)"
+                  backgroundColor: isVerified ? "rgba(16, 185, 129, 0.15)" : "rgba(37, 99, 235, 0.15)",
+                  borderColor: isVerified ? "rgba(16, 185, 129, 0.3)" : "rgba(37, 99, 235, 0.3)"
                 }}
                 className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-transparent transition-colors relative"
               >
                 <AnimatePresence initial={false}>
                   <motion.div
-                    key={adminPassword === ADMIN_PASSWORD ? 'unlocked' : 'locked'}
+                    key={isVerified ? 'unlocked' : 'locked'}
                     initial={{ scale: 0.8, opacity: 0, rotate: -15 }}
                     animate={{ scale: 1, opacity: 1, rotate: 0 }}
                     exit={{ scale: 0.8, opacity: 0, rotate: 15 }}
                     transition={{ type: "spring", stiffness: 400, damping: 28 }}
                     className="absolute inset-0 flex items-center justify-center"
                   >
-                    {adminPassword === ADMIN_PASSWORD ? (
+                    {isVerified ? (
                       <Unlock className="w-8 h-8 text-emerald-400" />
                     ) : (
                       <Lock className="w-8 h-8 text-blue-400" />
@@ -529,13 +529,25 @@ function Home() {
               <h2 className="text-xl font-bold mb-2">Reserved Session</h2>
               <p className="text-slate-400 text-xs mb-6 uppercase tracking-widest font-bold">Session ID: {ADMIN_SESSION_ID}</p>
 
-              <form onSubmit={(e) => {
+              <form onSubmit={async (e) => {
                 e.preventDefault();
-                if (adminPassword === ADMIN_PASSWORD) {
-                  sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, "true");
-                  router.push(`/${ADMIN_SESSION_ID}`);
-                  setShowAdminModal(false);
-                } else {
+                try {
+                  const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, {
+                    password: adminPassword
+                  });
+                  if (res.data.success && res.data.token) {
+                    setIsVerified(true);
+                    sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
+                    setTimeout(() => {
+                      router.push(`/${ADMIN_SESSION_ID}`);
+                      setShowAdminModal(false);
+                      setIsVerified(false);
+                    }, 800);
+                  } else {
+                    setAdminError(true);
+                    setTimeout(() => setAdminError(false), 2000);
+                  }
+                } catch (err) {
                   setAdminError(true);
                   setTimeout(() => setAdminError(false), 2000);
                 }

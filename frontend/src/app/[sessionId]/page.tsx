@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { v4 as uuidv4 } from "uuid";
 import { 
-  X, Monitor, LogOut, Trash2, Lock, Cloud, AlertTriangle, 
+  X, Monitor, LogOut, Trash2, Lock, Unlock, Cloud, AlertTriangle, 
   Copy, CheckCircle, ChevronsLeft, ChevronsRight, Smartphone,
   Sparkles, ArrowRight
 } from "lucide-react";
@@ -46,7 +46,6 @@ const calculateSHA256 = async (file: File): Promise<string> => {
 
 // Admin Credentials
 const ADMIN_SESSION_ID = process.env.NEXT_PUBLIC_ADMIN_SESSION_ID;
-const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
 
 const getDeviceInfo = () => {
   if (typeof window === "undefined") return { name: "Unknown", platform: "unknown", browser: "unknown" };
@@ -180,9 +179,16 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [adminPasswordValue, setAdminPasswordValue] = useState("");
   const [adminAuthError, setAdminAuthError] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
 
   const [isTourActive, setIsTourActive] = useState(false);
   const [showTourBanner, setShowTourBanner] = useState(false);
+
+  const getAuthHeaders = useCallback(() => {
+    if (sessionId !== ADMIN_SESSION_ID) return {};
+    const token = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, [sessionId]);
 
   useEffect(() => {
     if (hasMounted && isAdminUnlocked && !isValidating && !sessionError) {
@@ -197,8 +203,8 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   useEffect(() => {
     setHasMounted(true);
     if (sessionId === ADMIN_SESSION_ID) {
-      const isAuth = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`) === "true";
-      setIsAdminUnlocked(isAuth);
+      const token = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
+      setIsAdminUnlocked(!!token);
     } else {
       setIsAdminUnlocked(true);
     }
@@ -210,7 +216,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     const cachedText = localStorage.getItem(`${siteConfig.slug}:text:${sessionId}`);
     if (cachedText) setText(cachedText);
 
-    axios.get(`${API_URL}/session/${sessionId}`)
+    axios.get(`${API_URL}/session/${sessionId}`, { headers: getAuthHeaders() })
       .then((res) => {
         setText(res.data.text || "");
         setFiles(res.data.files || []);
@@ -234,7 +240,10 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     newSocket.on("connect", () => {
       setConnected(true);
       newSocket.emit("join_session", { 
-        sessionId, deviceInfo: getDeviceInfo(), persistentDeviceId: getPersistentDeviceId() 
+        sessionId, 
+        token: sessionId === ADMIN_SESSION_ID ? sessionStorage.getItem(`syncosync:auth:${sessionId}`) : undefined,
+        deviceInfo: getDeviceInfo(), 
+        persistentDeviceId: getPersistentDeviceId() 
       });
     });
     newSocket.on("disconnect", () => setConnected(false));
@@ -298,7 +307,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         fileName: file.name,
         fileSize: file.size,
         mimeType: file.type || "application/octet-stream"
-      });
+      }, { headers: getAuthHeaders() });
       const { uploadUrl, fileId, s3Key } = presignRes.data;
 
       await axios.put(uploadUrl, file, {
@@ -319,7 +328,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         mimeType: file.type || "application/octet-stream",
         s3Key,
         hash
-      });
+      }, { headers: getAuthHeaders() });
     }));
 
     const failed = results.filter(r => r.status === 'rejected');
@@ -338,12 +347,12 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
   const handleDownloadFile = useCallback(async (file: FileMeta) => {
     try {
-      const res = await axios.get(`${API_URL}/download?s3Key=${encodeURIComponent(file.s3Key)}`);
+      const res = await axios.get(`${API_URL}/download?s3Key=${encodeURIComponent(file.s3Key)}`, { headers: getAuthHeaders() });
       window.open(res.data.url, "_blank");
     } catch (err) {
       alert("Could not generate download link");
     }
-  }, []);
+  }, [getAuthHeaders]);
 
   const handleDeleteFile = useCallback((file: FileMeta) => {
     if (socket && connected) socket.emit("delete_file", { sessionId, file });
@@ -352,13 +361,13 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const confirmDeleteSession = useCallback(async () => {
     setShowDeleteModal(false);
     try {
-      await axios.delete(`${API_URL}/session/${sessionId}`);
+      await axios.delete(`${API_URL}/session/${sessionId}`, { headers: getAuthHeaders() });
       localStorage.removeItem(`${siteConfig.slug}:text:${sessionId}`);
       router.push("/?status=deleted&origin=self");
     } catch (err) {
       alert("Failed to delete session");
     }
-  }, [sessionId, router]);
+  }, [sessionId, router, getAuthHeaders]);
 
   const handleDeleteSession = useCallback(() => {
     if (sessionId === ADMIN_SESSION_ID) {
@@ -408,19 +417,52 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           animate={{ opacity: 1, scale: 1, y: 0 }}
           className="max-w-sm w-full bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-10 rounded-[2.5rem] shadow-2xl relative z-10 text-center"
         >
-          <div className="w-20 h-20 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-xl border border-slate-700">
-             <Lock className="w-10 h-10 text-blue-400 opacity-80" />
-          </div>
+          <motion.div 
+            animate={{
+              backgroundColor: isVerified ? "rgba(16, 185, 129, 0.15)" : "rgba(37, 99, 235, 0.15)",
+              borderColor: isVerified ? "rgba(16, 185, 129, 0.3)" : "rgba(37, 99, 235, 0.3)"
+            }}
+            className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-8 border border-transparent transition-colors relative"
+          >
+            <AnimatePresence initial={false}>
+              <motion.div
+                key={isVerified ? 'unlocked' : 'locked'}
+                initial={{ scale: 0.8, opacity: 0, rotate: -15 }}
+                animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                exit={{ scale: 0.8, opacity: 0, rotate: 15 }}
+                transition={{ type: "spring", stiffness: 400, damping: 28 }}
+                className="absolute inset-0 flex items-center justify-center"
+              >
+                {isVerified ? (
+                  <Unlock className="w-10 h-10 text-emerald-400" />
+                ) : (
+                  <Lock className="w-10 h-10 text-blue-400 opacity-80" />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </motion.div>
           
           <h1 className="text-2xl font-bold mb-2">Reserved Admin Space</h1>
           <p className="text-slate-500 text-xs mb-8 uppercase tracking-widest font-bold">Encrypted Session: {ADMIN_SESSION_ID}</p>
           
-          <form onSubmit={(e) => {
+          <form onSubmit={async (e) => {
             e.preventDefault();
-            if (adminPasswordValue === ADMIN_PASSWORD) {
-              sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, "true");
-              setIsAdminUnlocked(true);
-            } else {
+            try {
+              const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, {
+                password: adminPasswordValue
+              });
+              if (res.data.success && res.data.token) {
+                setIsVerified(true);
+                sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
+                setTimeout(() => {
+                  setIsAdminUnlocked(true);
+                  setIsVerified(false);
+                }, 800);
+              } else {
+                setAdminAuthError(true);
+                setTimeout(() => setAdminAuthError(false), 2000);
+              }
+            } catch (err) {
               setAdminAuthError(true);
               setTimeout(() => setAdminAuthError(false), 2000);
             }

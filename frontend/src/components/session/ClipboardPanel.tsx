@@ -1,0 +1,164 @@
+"use client";
+
+import { useState, useRef, useEffect, useCallback, memo } from "react";
+import { Socket } from "socket.io-client";
+import { Mic, MicOff, Minus, Plus, CheckCircle, Copy } from "lucide-react";
+import { siteConfig } from "@/config/site";
+
+export const ClipboardPanel = memo(({ 
+  sessionId, 
+  socket, 
+  connected, 
+  initialText,
+  activeTab,
+  isFilePanelCollapsed
+}: { 
+  sessionId: string, 
+  socket: Socket | null, 
+  connected: boolean,
+  initialText: string,
+  activeTab: string,
+  isFilePanelCollapsed: boolean
+}) => {
+  const [text, setText] = useState(initialText);
+  const [fontSize, setFontSize] = useState(14);
+  const [copiedText, setCopiedText] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const textRef = useRef(text);
+  const isLocalChange = useRef(false);
+  const recognitionRef = useRef<any>(null);
+
+  // Sync with initialText from parent (only for first load or remote updates)
+  useEffect(() => {
+    if (initialText !== textRef.current) {
+      setText(initialText);
+      textRef.current = initialText;
+    }
+  }, [initialText]);
+
+  // WebSocket Listener for text updates
+  useEffect(() => {
+    if (!socket) return;
+    const handleUpdate = ({ content }: { content: string }) => {
+      if (content !== textRef.current) {
+        isLocalChange.current = false;
+        setText(content);
+        textRef.current = content;
+        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, content);
+      }
+    };
+    socket.on("text_updated", handleUpdate);
+    return () => { socket.off("text_updated", handleUpdate); };
+  }, [socket, sessionId]);
+
+  // Debounced Sync Effect
+  useEffect(() => {
+    if (!isLocalChange.current) return;
+
+    const timer = setTimeout(() => {
+      if (socket && connected) {
+        socket.emit("update_text", { sessionId, content: text });
+        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, text);
+      }
+      isLocalChange.current = false;
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [text, socket, connected, sessionId]);
+
+  // Setup Speech Recognition
+  useEffect(() => {
+    if (typeof window !== "undefined" && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+      const SpeechReg = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      recognitionRef.current = new SpeechReg();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      
+      recognitionRef.current.onresult = (e: any) => {
+        let finalTranscript = '';
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          if (e.results[i].isFinal) {
+             finalTranscript += e.results[i][0].transcript + ' ';
+          }
+        }
+        if (finalTranscript) {
+          isLocalChange.current = true;
+          setText((prev) => {
+             const updated = prev + (prev.endsWith(' ') || prev.length===0 ? '' : ' ') + finalTranscript;
+             textRef.current = updated;
+             return updated;
+          });
+        }
+      };
+      
+      recognitionRef.current.onerror = () => setIsListening(false);
+      recognitionRef.current.onend = () => setIsListening(false);
+    }
+    return () => { if (recognitionRef.current) recognitionRef.current.stop(); };
+  }, []);
+
+  const handleTextChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newText = e.target.value;
+    isLocalChange.current = true;
+    setText(newText);
+    textRef.current = newText;
+  }, []);
+
+  const toggleListening = useCallback(() => {
+    if(isListening) {
+        recognitionRef.current?.stop();
+        setIsListening(false);
+    } else {
+        if(!recognitionRef.current) {
+            alert("Speech to text is not supported in this browser.");
+            return;
+        }
+        recognitionRef.current.start();
+        setIsListening(true);
+    }
+  }, [isListening]);
+
+  const handleCopyText = useCallback(() => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(true);
+    setTimeout(() => setCopiedText(false), 2000);
+  }, [text]);
+
+  return (
+    <div className={`h-full flex flex-col items-stretch p-4 md:p-6 transition-all duration-300 ease-in-out ${activeTab === 'text' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-full' : 'w-full md:w-3/5 lg:w-2/3'}`}>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-slate-200">Clipboard</h2>
+          <button 
+            id="tour-mic"
+            onClick={toggleListening}
+            className={`p-1.5 rounded text-white transition-colors border ${isListening ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'}`}
+          >
+            {isListening ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+          </button>
+          <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5">
+            <button onClick={() => setFontSize(p => Math.max(10, p - 2))} className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"><Minus className="w-3.5 h-3.5" /></button>
+            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+            <button onClick={() => setFontSize(p => Math.min(48, p + 2))} className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"><Plus className="w-3.5 h-3.5" /></button>
+          </div>
+        </div>
+        <button onClick={handleCopyText} className="p-1.5 sm:px-3 sm:py-1.5 text-xs font-medium rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-700">
+          {copiedText ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          <span className="hidden sm:inline">{copiedText ? 'Copied!' : 'Copy All'}</span>
+        </button>
+      </div>
+      <div id="tour-clipboard" className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all shadow-inner">
+        <textarea
+          id="main-content"
+          value={text}
+          onChange={handleTextChange}
+          placeholder="Type or paste text here... It will sync instantly."
+          style={{ scrollbarGutter: 'stable', fontSize: `${fontSize}px` }}
+          className="w-full h-full p-3 bg-transparent resize-none outline-none text-slate-200 placeholder:text-slate-600 font-mono leading-relaxed"
+        />
+      </div>
+    </div>
+  );
+});
+
+ClipboardPanel.displayName = "ClipboardPanel";

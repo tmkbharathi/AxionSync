@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, use, memo, useCallback } from "react";
+import { useEffect, useState, useRef, use, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
@@ -8,17 +8,23 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { v4 as uuidv4 } from "uuid";
 import { 
-  Copy, CheckCircle, Check, UploadCloud, Cloud, X, Download, Trash2, Link, 
-  Settings, Loader2, Menu, Smartphone, QrCode, Mic, MicOff, Eye, EyeOff,
-  Info, Monitor, Tablet, Globe, Share2, Sparkles, HelpCircle,
-  PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
-  ChevronsRight, ChevronsLeft, AlertTriangle, Plus, Minus, Lock, LogOut, ArrowRight
+  X, Monitor, LogOut, Trash2, Lock, Cloud, AlertTriangle, 
+  Copy, CheckCircle, ChevronsLeft, ChevronsRight, Smartphone,
+  Sparkles, ArrowRight
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+
 import { siteConfig } from "@/config/site";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { OnboardingTour, TourLauncher } from "@/components/OnboardingTour";
+import { OnboardingTour } from "@/components/OnboardingTour";
 import PerformanceSettings from "@/components/PerformanceSettings";
+
+// Import modular components & types
+import { FileMeta, ActiveDevice } from "@/components/session/types";
+import { DeviceItem } from "@/components/session/DeviceItem";
+import { SessionHeader } from "@/components/session/SessionHeader";
+import { SessionFooter } from "@/components/session/SessionFooter";
+import { ClipboardPanel } from "@/components/session/ClipboardPanel";
+import { FileManagerPanel } from "@/components/session/FileManagerPanel";
 
 // Dynamic imports for heavy components
 const Background3D = dynamic(() => import("@/components/Background3D").then(mod => mod.Background3D), { 
@@ -42,28 +48,7 @@ const calculateSHA256 = async (file: File): Promise<string> => {
 const ADMIN_SESSION_ID = process.env.NEXT_PUBLIC_ADMIN_SESSION_ID;
 const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
 
-interface FileMeta {
-  id: string;
-  name: string;
-  size: number;
-  mimeType: string;
-  uploadedAt: number;
-  s3Key: string;
-  previewUrl?: string;
-}
-
-interface DeviceInfo {
-  name: string;
-  platform: string;
-  browser: string;
-}
-
-interface ActiveDevice {
-  id: string;
-  info: DeviceInfo;
-}
-
-const getDeviceInfo = (): DeviceInfo => {
+const getDeviceInfo = () => {
   if (typeof window === "undefined") return { name: "Unknown", platform: "unknown", browser: "unknown" };
   
   const ua = navigator.userAgent;
@@ -107,615 +92,6 @@ const getPersistentDeviceId = (): string => {
   }
   return id;
 };
-
-const formatSize = (bytes: number) => {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-};
-
-// Memoized File Item for performance
-const FileItem = memo(({ 
-  file, 
-  handleDownload, 
-  handleDelete,
-  isSelected,
-  onToggleSelect
-}: { 
-  file: FileMeta, 
-  handleDownload: (f: FileMeta) => void, 
-  handleDelete: (f: FileMeta) => void,
-  isSelected: boolean,
-  onToggleSelect: (id: string) => void
-}) => {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      className={`bg-slate-800/40 border p-3 rounded-xl flex items-center justify-between group transition-colors ${isSelected ? 'border-blue-500/50 bg-blue-500/5' : 'border-slate-700/50 hover:bg-slate-800/80'}`}
-    >
-      <div className="flex items-center gap-3 overflow-hidden pr-3">
-        <button 
-          onClick={() => onToggleSelect(file.id)}
-          className="shrink-0 p-1 -ml-1 flex items-center justify-center group/check"
-          title={isSelected ? "Deselect" : "Select"}
-        >
-          <div className={`w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center transition-all duration-200 ${isSelected ? 'bg-blue-500 border-blue-500 scale-100 shadow-sm shadow-blue-500/20' : 'bg-slate-900/50 border-slate-600 group-hover/check:border-blue-400 scale-95 group-hover/check:scale-100'}`}>
-            <Check className={`w-3 h-3 text-white transition-opacity duration-200 ${isSelected ? 'opacity-100' : 'opacity-0'}`} strokeWidth={3} />
-          </div>
-        </button>
-        {file.previewUrl ? (
-          <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 shrink-0">
-             <img src={file.previewUrl} alt={file.name} className="w-full h-full object-cover" />
-          </div>
-        ) : (
-          <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 shrink-0">
-             <Globe className="w-5 h-5" />
-          </div>
-        )}
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-200 truncate" title={file.name}>{file.name}</p>
-          <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-            <span>{formatSize(file.size)}</span>
-            <span>•</span>
-            <span>{formatDistanceToNow(new Date(file.uploadedAt), { addSuffix: true })}</span>
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-        <button 
-          onClick={() => handleDownload(file)}
-          className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
-          title="Download"
-        >
-          <Download className="w-4 h-4" />
-        </button>
-        <button 
-          onClick={() => handleDelete(file)}
-          className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 rounded-md transition-colors"
-          title="Delete"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
-    </motion.div>
-  );
-});
-
-// Memoized Device Item for performance
-const DeviceItem = memo(({ 
-  device, 
-  isCurrent 
-}: { 
-  device: ActiveDevice, 
-  isCurrent: boolean 
-}) => {
-  return (
-    <div className="flex items-center gap-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
-      <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-blue-400 border border-slate-700">
-        {device.info.platform === 'mobile' ? <Smartphone className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-bold truncate">{isCurrent ? "This Device" : device.info.name}</p>
-          {isCurrent && (
-             <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded uppercase">You</span>
-          )}
-        </div>
-        <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">{device.info.browser} • {device.info.platform}</p>
-      </div>
-    </div>
-  );
-});
-
-// Memoized Header for performance
-const SessionHeader = memo(({ 
-  connected, 
-  roomSize, 
-  sessionId, 
-  setShowDevicesModal, 
-  setShowQr, 
-  handleCopyLink, 
-  copiedLink,
-  handleDeleteSession,
-  isPro,
-  onStartTour
-}: { 
-  connected: boolean, 
-  roomSize: number, 
-  sessionId: string, 
-  setShowDevicesModal: (v: boolean) => void, 
-  setShowQr: (v: boolean) => void, 
-  handleCopyLink: () => void, 
-  copiedLink: boolean,
-  handleDeleteSession: () => void,
-  isPro: boolean,
-  onStartTour: () => void
-}) => {
-  return (
-    <header className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-800/60 bg-slate-900/40 backdrop-blur-md z-10">
-      <div className="flex items-center gap-1.5 sm:gap-3">
-        <div className="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-          <Smartphone className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-bold text-lg hidden sm:block">Devices</h1>
-          </div>
-          <div className="text-xs text-slate-400 flex items-center gap-1 sm:gap-2">
-            <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
-            <div id="tour-presence" className="flex items-center gap-1.5">
-              <span>{connected ? `${roomSize} Connected` : 'System Online'}</span>
-              {connected && (
-                <button 
-                  onClick={() => setShowDevicesModal(true)}
-                  className="p-0.5 hover:bg-slate-800 rounded transition-colors text-slate-500 hover:text-blue-400"
-                  title="View Device List"
-                  aria-label="View Connected Device List"
-                >
-                  <Info className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1.5 sm:gap-3 bg-slate-800/50 rounded-lg p-1 border border-slate-700/50">
-        <button 
-          onClick={onStartTour}
-          className="p-2 hover:bg-slate-700 rounded-md transition-colors text-slate-300 hover:text-white"
-          title="Show Room Guide"
-          aria-label="Start Onboarding Tour"
-        >
-          <HelpCircle className="w-4 h-4" />
-        </button>
-
-        <div className="h-4 w-px bg-slate-700" />
-
-        <button 
-          id="tour-qr"
-          onClick={() => setShowQr(true)}
-          className="p-2 hover:bg-slate-700 rounded-md transition-colors text-slate-300 hover:text-white"
-          title="Show QR Code"
-          aria-label="Display Session QR Code"
-        >
-          <QrCode className="w-4 h-4" />
-        </button>
-        
-        <div className="h-4 w-px bg-slate-700 hidden sm:block" />
-        
-        <div className="hidden sm:flex items-center gap-2 px-1 sm:px-2 text-[10px] sm:text-sm font-mono text-slate-300">
-          {sessionId}
-        </div>
-
-        <div className="h-4 w-px bg-slate-700" />
-
-        <button 
-          id="tour-share"
-          onClick={handleCopyLink}
-          className={`flex items-center gap-2 px-2 sm:px-4 py-2 transition-all rounded-md font-bold text-xs border ${copiedLink ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/20 shadow-lg shadow-blue-500/5'}`}
-        >
-          {copiedLink ? <CheckCircle className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
-          <span className="hidden sm:inline">{copiedLink ? "Copied!" : "Share"}</span>
-        </button>
-
-        <div className="h-4 w-px bg-slate-700" />
-        
-        <button 
-          id="tour-delete"
-          onClick={handleDeleteSession}
-          className={`p-2 rounded-md transition-colors flex items-center gap-2 ${isPro ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400' : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400'}`}
-          title={isPro ? "Logout Session" : "Delete Session"}
-          aria-label={isPro ? "Logout from this session" : "Wipe and Delete Entire Session"}
-        >
-          {isPro ? <LogOut className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
-          <span className="hidden sm:inline text-xs font-medium">{isPro ? "Logout" : "Delete"}</span>
-        </button>
-      </div>
-    </header>
-  );
-});
-
-// Memoized Footer for performance
-const SessionFooter = memo(({ isPro }: { isPro?: boolean }) => {
-  return (
-    <footer className="text-[10px] md:text-xs text-slate-500 text-center py-2 bg-slate-950 z-10 border-t border-slate-900 flex justify-center items-center gap-4">
-      <span>
-        {isPro 
-          ? "Data auto-destructs after 1 year of inactivity." 
-          : "Data auto-destructs after 24 hours of inactivity."}
-      </span>
-      <span className="text-slate-700">|</span>
-      <span className="font-medium text-slate-600">Beta v{siteConfig.version}</span>
-    </footer>
-  );
-});
-
-// --- NEW COMPONENT: ClipboardPanel ---
-const ClipboardPanel = memo(({ 
-  sessionId, 
-  socket, 
-  connected, 
-  initialText,
-  activeTab,
-  isFilePanelCollapsed
-}: { 
-  sessionId: string, 
-  socket: Socket | null, 
-  connected: boolean,
-  initialText: string,
-  activeTab: string,
-  isFilePanelCollapsed: boolean
-}) => {
-  const [text, setText] = useState(initialText);
-  const [fontSize, setFontSize] = useState(14);
-  const [copiedText, setCopiedText] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const textRef = useRef(text);
-  const isLocalChange = useRef(false);
-  const recognitionRef = useRef<any>(null);
-
-  // Sync with initialText from parent (only for first load or remote updates)
-  useEffect(() => {
-    if (initialText !== textRef.current) {
-      setText(initialText);
-      textRef.current = initialText;
-    }
-  }, [initialText]);
-
-  // WebSocket Listener for text updates
-  useEffect(() => {
-    if (!socket) return;
-    const handleUpdate = ({ content }: { content: string }) => {
-      if (content !== textRef.current) {
-        isLocalChange.current = false;
-        setText(content);
-        textRef.current = content;
-        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, content);
-      }
-    };
-    socket.on("text_updated", handleUpdate);
-    return () => { socket.off("text_updated", handleUpdate); };
-  }, [socket, sessionId]);
-
-  // Debounced Sync Effect
-  useEffect(() => {
-    if (!isLocalChange.current) return;
-
-    const timer = setTimeout(() => {
-      if (socket && connected) {
-        socket.emit("update_text", { sessionId, content: text });
-        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, text);
-      }
-      isLocalChange.current = false;
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [text, socket, connected, sessionId]);
-
-  // Setup Speech Recognition
-  useEffect(() => {
-    if (typeof window !== "undefined" && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
-      const SpeechReg = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      recognitionRef.current = new SpeechReg();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
-      
-      recognitionRef.current.onresult = (e: any) => {
-        let finalTranscript = '';
-        for (let i = e.resultIndex; i < e.results.length; ++i) {
-          if (e.results[i].isFinal) {
-             finalTranscript += e.results[i][0].transcript + ' ';
-          }
-        }
-        if (finalTranscript) {
-          isLocalChange.current = true;
-          setText((prev) => {
-             const updated = prev + (prev.endsWith(' ') || prev.length===0 ? '' : ' ') + finalTranscript;
-             textRef.current = updated;
-             return updated;
-          });
-        }
-      };
-      
-      recognitionRef.current.onerror = () => setIsListening(false);
-      recognitionRef.current.onend = () => setIsListening(false);
-    }
-    return () => { if (recognitionRef.current) recognitionRef.current.stop(); };
-  }, []);
-
-  const handleTextChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newText = e.target.value;
-    isLocalChange.current = true;
-    setText(newText);
-    textRef.current = newText;
-  }, []);
-
-  const toggleListening = useCallback(() => {
-    if(isListening) {
-        recognitionRef.current?.stop();
-        setIsListening(false);
-    } else {
-        if(!recognitionRef.current) {
-            alert("Speech to text is not supported in this browser.");
-            return;
-        }
-        recognitionRef.current.start();
-        setIsListening(true);
-    }
-  }, [isListening]);
-
-  const handleCopyText = useCallback(() => {
-    navigator.clipboard.writeText(text);
-    setCopiedText(true);
-    setTimeout(() => setCopiedText(false), 2000);
-  }, [text]);
-
-  return (
-    <div className={`h-full flex flex-col items-stretch p-4 md:p-6 transition-all duration-300 ease-in-out ${activeTab === 'text' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-full' : 'w-full md:w-3/5 lg:w-2/3'}`}>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-slate-200">Clipboard</h2>
-          <button 
-            id="tour-mic"
-            onClick={toggleListening}
-            className={`p-1.5 rounded text-white transition-colors border ${isListening ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'}`}
-          >
-            {isListening ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
-          </button>
-          <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5">
-            <button onClick={() => setFontSize(p => Math.max(10, p - 2))} className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"><Minus className="w-3.5 h-3.5" /></button>
-            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
-            <button onClick={() => setFontSize(p => Math.min(48, p + 2))} className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"><Plus className="w-3.5 h-3.5" /></button>
-          </div>
-        </div>
-        <button onClick={handleCopyText} className="p-1.5 sm:px-3 sm:py-1.5 text-xs font-medium rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-700">
-          {copiedText ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          <span className="hidden sm:inline">{copiedText ? 'Copied!' : 'Copy All'}</span>
-        </button>
-      </div>
-      <div id="tour-clipboard" className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all shadow-inner">
-        <textarea
-          id="main-content"
-          value={text}
-          onChange={handleTextChange}
-          placeholder="Type or paste text here... It will sync instantly."
-          style={{ scrollbarGutter: 'stable', fontSize: `${fontSize}px` }}
-          className="w-full h-full p-3 bg-transparent resize-none outline-none text-slate-200 placeholder:text-slate-600 font-mono leading-relaxed"
-        />
-      </div>
-    </div>
-  );
-});
-
-// --- NEW COMPONENT: FileManagerPanel ---
-const FileManagerPanel = memo(({ 
-  files, 
-  uploading, 
-  uploadProgress, 
-  activeTab, 
-  isFilePanelCollapsed,
-  processFiles,
-  handleDownloadFile,
-  handleDeleteFile,
-  setIsFilePanelCollapsed,
-  isAdminSession
-}: { 
-  files: FileMeta[], 
-  uploading: boolean, 
-  uploadProgress: number,
-  activeTab: string,
-  isFilePanelCollapsed: boolean,
-  processFiles: (files: File[]) => void,
-  handleDownloadFile: (f: FileMeta) => void,
-  handleDeleteFile: (f: FileMeta) => void,
-  setIsFilePanelCollapsed: (v: boolean) => void,
-  isAdminSession: boolean
-}) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  
-  const deleteModalRef = useFocusTrap(showDeleteModal, () => setShowDeleteModal(false));
-
-  // Cleanup selectedIds when files change (e.g. on delete)
-  useEffect(() => {
-    const validIds = new Set(files.map(f => f.id));
-    let changed = false;
-    const newSet = new Set<string>();
-    selectedIds.forEach(id => {
-      if (validIds.has(id)) newSet.add(id);
-      else changed = true;
-    });
-    if (changed) setSelectedIds(newSet);
-  }, [files, selectedIds]);
-
-  const toggleSelect = useCallback((id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const handleSelectAll = useCallback(() => {
-    if (selectedIds.size === files.length && files.length > 0) setSelectedIds(new Set());
-    else setSelectedIds(new Set(files.map(f => f.id)));
-  }, [files, selectedIds.size]);
-
-  const handleDeleteSelected = useCallback(() => {
-    if (selectedIds.size === 0) return;
-    setShowDeleteModal(true);
-  }, [selectedIds]);
-
-  const confirmDeleteSelected = useCallback(async () => {
-    const filesToDelete = files.filter(f => selectedIds.has(f.id));
-    setShowDeleteModal(false);
-    setSelectedIds(new Set()); // Clear selection immediately
-    
-    // Stagger deletion to allow smooth exit animations
-    for (const f of filesToDelete) {
-      handleDeleteFile(f);
-      await new Promise(resolve => setTimeout(resolve, 150));
-    }
-  }, [selectedIds, files, handleDeleteFile]);
-
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    processFiles(Array.from(e.target.files));
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [processFiles]);
-
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    if (e.dataTransfer.files?.length) {
-      processFiles(Array.from(e.dataTransfer.files));
-    }
-  }, [processFiles]);
-
-  return (
-    <div className={`h-full bg-slate-900/20 flex flex-col overflow-hidden transition-all duration-300 ease-in-out ${activeTab === 'files' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-full md:w-2/5 lg:w-1/3 opacity-100'}`}>
-      <div className="p-4 md:p-6 border-b border-slate-800/60">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-slate-200">Files</h2>
-            {files.length > 0 && (
-              <button 
-                onClick={handleSelectAll}
-                className="flex items-center gap-2 cursor-pointer text-slate-400 hover:text-slate-200 text-sm transition-colors group/all"
-              >
-                <div className={`w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center transition-all duration-200 ${selectedIds.size === files.length && files.length > 0 ? 'bg-blue-500 border-blue-500 scale-100 shadow-sm shadow-blue-500/20' : 'bg-slate-900/50 border-slate-600 group-hover/all:border-blue-400 scale-95 group-hover/all:scale-100'}`}>
-                  <Check className={`w-3 h-3 text-white transition-opacity duration-200 ${selectedIds.size === files.length && files.length > 0 ? 'opacity-100' : 'opacity-0'}`} strokeWidth={3} />
-                </div>
-                <span className="font-medium">All</span>
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {selectedIds.size > 0 && (
-              <button 
-                onClick={handleDeleteSelected}
-                className="flex items-center justify-center h-[24px] px-2 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded-full transition-colors"
-                title="Delete Selected"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
-            <span className="text-xs text-slate-400 px-2.5 bg-slate-800 rounded-full flex items-center h-[24px]">{files.length} items</span>
-          </div>
-        </div>
-        <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-        <div id="tour-files" onDrop={onDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} className="relative">
-          <div 
-            onClick={() => { if (!uploading) fileInputRef.current?.click(); }}
-            className={`w-full h-28 border-2 border-dashed ${isDragOver ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-slate-700/80 text-slate-400"} rounded-xl flex flex-col items-center justify-center gap-2 transition-all overflow-hidden relative group ${uploading ? 'cursor-not-allowed opacity-90' : 'cursor-pointer hover:bg-slate-800/30 hover:border-blue-500/50 hover:text-blue-400'}`}
-            role="button"
-            tabIndex={0}
-          >
-            {uploading ? (
-              <div className="absolute inset-0 bg-slate-800/80 flex flex-col items-center justify-center backdrop-blur-sm z-10">
-                <Loader2 className="w-6 h-6 animate-spin text-blue-400 mb-2" />
-                <div 
-                  className="rounded-full" 
-                  style={{ 
-                    width: '70%', 
-                    height: '8px', 
-                    background: `linear-gradient(to right, #3b82f6 ${uploadProgress}%, #334155 ${uploadProgress}%)` 
-                  }}
-                />
-                <span className="text-xs mt-2 font-medium text-slate-300">{uploadProgress}%</span>
-              </div>
-            ) : (
-              <>
-                <div className="p-3 bg-slate-800 rounded-full group-hover:scale-110 transition-transform"><UploadCloud className="w-5 h-5 text-slate-300" /></div>
-                <span className="text-sm font-medium">Click or Drag to Upload (Max {isAdminSession ? "1GB" : "50MB"})</span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
-        {files.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-60">
-            <Cloud className="w-12 h-12 mb-3 grayscale" /><p className="text-sm">No files uploaded yet</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <AnimatePresence>
-              {files.map((f) => (
-                <FileItem 
-                  key={f.id} 
-                  file={f} 
-                  handleDownload={handleDownloadFile} 
-                  handleDelete={handleDeleteFile} 
-                  isSelected={selectedIds.has(f.id)}
-                  onToggleSelect={toggleSelect}
-                />
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
-      </div>
-
-      {/* Delete Selected Files Modal */}
-      <AnimatePresence>
-        {showDeleteModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowDeleteModal(false)}
-              className="absolute inset-0 bg-slate-950/90 backdrop-blur-lg"
-            />
-            <motion.div 
-              ref={deleteModalRef}
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl"
-            >
-              <div className="p-8">
-                <div className="w-16 h-16 bg-rose-500/10 rounded-2xl flex items-center justify-center mb-6 border border-rose-500/20">
-                  <Trash2 className="w-8 h-8 text-rose-500" />
-                </div>
-                
-                <h3 className="text-2xl font-bold text-white mb-3">Delete Selected Files?</h3>
-                <p className="text-slate-400 mb-8 leading-relaxed">
-                  You are about to delete <span className="text-rose-400 font-semibold">{selectedIds.size} file{selectedIds.size === 1 ? '' : 's'}</span> for <span className="text-white font-semibold">everyone</span> in this room. This action cannot be undone.
-                </p>
-                
-                <div className="flex flex-col gap-3">
-                  <button
-                    onClick={confirmDeleteSelected}
-                    className="w-full py-4 px-6 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-2xl transition-all shadow-lg shadow-rose-500/20 active:scale-[0.98] flex items-center justify-center gap-2"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                    Delete {selectedIds.size} File{selectedIds.size === 1 ? '' : 's'}
-                  </button>
-                  
-                  <button
-                    onClick={() => setShowDeleteModal(false)}
-                    className="w-full py-4 px-6 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-2xl transition-all active:scale-[0.98]"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-});
 
 // Tour Steps Configuration for Session Room
 const SESSION_TOUR_STEPS = [
@@ -789,7 +165,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
   const [isValidating, setIsValidating] = useState(true);
   const [sessionError, setSessionError] = useState<"expired" | "not_found" | "purged" | null>(null);
-  const [isActivating, setIsActivating] = useState(false);
 
   const [activeDevices, setActiveDevices] = useState<ActiveDevice[]>([]);
   const [showDevicesModal, setShowDevicesModal] = useState(false);
@@ -800,8 +175,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const qrModalRef = useFocusTrap(showQr, () => setShowQr(false));
   const deleteModalRef = useFocusTrap(showDeleteModal, () => setShowDeleteModal(false));
   const sessionErrorRef = useFocusTrap(!!sessionError);
-
-  const hasAutoAttempted = useRef(false);
 
   const [hasMounted, setHasMounted] = useState(false);
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
@@ -821,7 +194,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   }, [hasMounted, isAdminUnlocked, isValidating, sessionError]);
 
-  // Sync state if sessionId changes (though sessionId is usually static in this route)
   useEffect(() => {
     setHasMounted(true);
     if (sessionId === ADMIN_SESSION_ID) {
@@ -832,20 +204,8 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   }, [sessionId]);
 
-  const handleActivateSession = useCallback(async () => {
-    setIsActivating(true);
-    try {
-      await axios.post(`${API_URL}/session/${sessionId}/init`);
-      setSessionError(null);
-    } catch (err) {
-      console.error("Failed to activate session", err);
-    } finally {
-      setIsActivating(false);
-    }
-  }, [sessionId]);
-
   useEffect(() => {
-    if (!isAdminUnlocked) return; // Wait for password if it's the admin session
+    if (!isAdminUnlocked) return;
 
     const cachedText = localStorage.getItem(`${siteConfig.slug}:text:${sessionId}`);
     if (cachedText) setText(cachedText);
@@ -858,14 +218,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         setIsValidating(false);
       })
       .catch(err => {
-        // Always redirect to main page for deleted/purged/missing rooms as requested by the user
-        // This prevents the 'Securing Connection' hang and shows the appropriate modal on home
         if (err.response?.status === 410) {
           router.replace("/?status=not_found&origin=purged");
         } else if (err.response?.status === 404) {
           router.replace(`/?status=not_found&origin=missing&id=${sessionId}`);
         } else {
-          // For other errors (network issues), show a generic error but don't redirect yet
           setSessionError("not_found");
           setIsValidating(false);
         }
@@ -893,7 +250,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     });
 
     return () => { newSocket.disconnect(); };
-  }, [sessionId, handleActivateSession, router, isAdminUnlocked]);
+  }, [sessionId, router, isAdminUnlocked]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -925,7 +282,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
     if (validFiles.length === 0) return;
 
-    // Check if large files exist
     const hasLargeFile = validFiles.some(f => f.size > 20 * 1024 * 1024);
     if (hasLargeFile && !window.confirm("Large file(s) (>20MB) may take time. Continue?")) return;
 
@@ -936,10 +292,8 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     const loadedSizes = new Array(validFiles.length).fill(0);
 
     const results = await Promise.allSettled(validFiles.map(async (file, index) => {
-      // 1. Calculate SHA-256 hash
       const hash = await calculateSHA256(file);
 
-      // 2. Request pre-signed S3 upload URL from backend
       const presignRes = await axios.post(`${API_URL}/session/${sessionId}/upload/presign`, {
         fileName: file.name,
         fileSize: file.size,
@@ -947,7 +301,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       });
       const { uploadUrl, fileId, s3Key } = presignRes.data;
 
-      // 3. Upload directly to S3 via PUT
       await axios.put(uploadUrl, file, {
         headers: { "Content-Type": file.type || "application/octet-stream" },
         onUploadProgress: (p) => { 
@@ -959,7 +312,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         }
       });
 
-      // 4. Confirm upload to backend to commit metadata
       return axios.post(`${API_URL}/session/${sessionId}/upload/confirm`, {
         fileId,
         name: file.name,
@@ -1010,7 +362,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
   const handleDeleteSession = useCallback(() => {
     if (sessionId === ADMIN_SESSION_ID) {
-      // Just logout for Pro sessions
       sessionStorage.removeItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
       router.push("/");
     } else {
@@ -1018,14 +369,8 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   }, [sessionId, router]);
 
-
-
-
-
-
-
   if (!hasMounted) {
-    return null; // Prevent hydration mismatch by avoiding rendering until mounted on client
+    return null;
   }
 
   if (isValidating && isAdminUnlocked) {
@@ -1055,7 +400,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   if (!isAdminUnlocked) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
-        {/* Ambient background glows */}
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none" />
 
@@ -1109,7 +453,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     );
   }
 
-  // If we have a session error but haven't redirected yet (for non-404/410 errors)
   if (sessionError) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4 overflow-hidden relative">
@@ -1175,7 +518,9 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         >
           Files
         </button>
-      </div>      {/* Main Content Area */}
+      </div>
+
+      {/* Main Content Area */}
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative z-10">
         <ClipboardPanel 
           sessionId={sessionId}
@@ -1190,7 +535,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         <div className="hidden md:flex flex-col items-center relative w-px bg-slate-800/60 h-full">
             <button
                 onClick={() => setIsFilePanelCollapsed(!isFilePanelCollapsed)}
-                className={`absolute top-1/2 -translate-y-1/2 z-20 w-6 h-10 bg-slate-900 border border-slate-700 flex items-center justify-center rounded-sm hover:bg-slate-800 transition-all ${isFilePanelCollapsed ? '-left-3' : '-left-3'}`}
+                className="absolute top-1/2 -translate-y-1/2 z-20 w-6 h-10 bg-slate-900 border border-slate-700 flex items-center justify-center rounded-sm hover:bg-slate-800 transition-all -left-3"
                 title={isFilePanelCollapsed ? "Show Files" : "Collapse Files"}
             >
                 {isFilePanelCollapsed ? <ChevronsLeft className="w-4 h-4 text-blue-400" /> : <ChevronsRight className="w-4 h-4 text-slate-500" />}
@@ -1262,6 +607,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         )}
       </AnimatePresence>
 
+      {/* QR Code Modal */}
       <AnimatePresence>
         {showQr && (
           <motion.div
@@ -1359,6 +705,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           </div>
         )}
       </AnimatePresence>
+
       {/* Onboarding Tour Components */}
       <OnboardingTour
         tourKey="session"

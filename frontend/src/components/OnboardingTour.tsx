@@ -16,9 +16,10 @@ interface OnboardingTourProps {
   steps: TourStep[];
   isActive: boolean;
   onClose: () => void;
+  onStepChange?: (stepIdx: number, step: TourStep) => void;
 }
 
-export function OnboardingTour({ tourKey, steps, isActive, onClose }: OnboardingTourProps) {
+export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange }: OnboardingTourProps) {
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [showCelebration, setShowCelebration] = useState(false);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
@@ -27,6 +28,13 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
   const [cardCoords, setCardCoords] = useState({ top: 0, left: 0 });
 
   const activeStep = steps[currentStepIdx];
+
+  // Notify parent component of step changes (e.g. to switch mobile tabs or uncollapse panels)
+  useEffect(() => {
+    if (isActive && activeStep && !showCelebration) {
+      onStepChange?.(currentStepIdx, activeStep);
+    }
+  }, [currentStepIdx, isActive, activeStep, showCelebration, onStepChange]);
 
   // Initialize window size
   useEffect(() => {
@@ -53,8 +61,15 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
       if (activeStep.targetId) {
         const element = document.getElementById(activeStep.targetId);
         if (element) {
-          // Scroll element into view if not fully visible
           const rect = element.getBoundingClientRect();
+
+          // If element has no size (e.g. tab transition or display:none), don't set invalid targetRect yet
+          if (rect.width === 0 || rect.height === 0) {
+            setTargetRect(null);
+            return;
+          }
+
+          // Scroll element into view if not fully visible
           const isVisible =
             rect.top >= 0 &&
             rect.left >= 0 &&
@@ -65,7 +80,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
             element.scrollIntoView({ behavior: "smooth", block: "center" });
           }
 
-          // Fetch bounds
+          // Fetch updated bounds
           const updatedRect = element.getBoundingClientRect();
           setTargetRect(updatedRect);
           return;
@@ -74,17 +89,20 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
       setTargetRect(null);
     };
 
-    // Run immediately and setup scroll/resize handlers
+    // Run immediately and setup scroll/resize handlers + delayed retries (for tab animation/DOM mount)
     updatePosition();
     
-    // Sometimes scrollIntoView shifts the elements, so we recalculate after a brief delay
-    const timer = setTimeout(updatePosition, 300);
+    const timer1 = setTimeout(updatePosition, 50);
+    const timer2 = setTimeout(updatePosition, 150);
+    const timer3 = setTimeout(updatePosition, 300);
 
     window.addEventListener("scroll", updatePosition, { passive: true });
     window.addEventListener("resize", updatePosition);
 
     return () => {
-      clearTimeout(timer);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
       window.removeEventListener("scroll", updatePosition);
       window.removeEventListener("resize", updatePosition);
     };
@@ -102,7 +120,13 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
     let left = window.innerWidth / 2 - cardWidth / 2;
 
     if (targetRect && !showCelebration) {
-      const position = activeStep.position || "bottom";
+      let position = activeStep.position || "bottom";
+
+      // On mobile screens (<768px), fallback "left" or "right" to "bottom" or "top" for clear visibility
+      if (window.innerWidth < 768 && (position === "left" || position === "right")) {
+        const spaceBelow = window.innerHeight - targetRect.bottom;
+        position = spaceBelow >= cardHeight + margin ? "bottom" : "top";
+      }
 
       switch (position) {
         case "top":

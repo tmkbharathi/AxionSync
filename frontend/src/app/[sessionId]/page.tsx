@@ -190,6 +190,15 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [sessionId]);
 
+  const handleTourStepChange = useCallback((_stepIdx: number, step: { targetId?: string }) => {
+    if (step.targetId === "tour-files") {
+      setActiveTab("files");
+      setIsFilePanelCollapsed(false);
+    } else if (step.targetId === "tour-clipboard" || step.targetId === "tour-mic") {
+      setActiveTab("text");
+    }
+  }, []);
+
   useEffect(() => {
     if (hasMounted && isAdminUnlocked && !isValidating && !sessionError) {
       const isCompleted = localStorage.getItem("syncosync:tour:session");
@@ -754,6 +763,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         steps={SESSION_TOUR_STEPS}
         isActive={isTourActive}
         onClose={() => setIsTourActive(false)}
+        onStepChange={handleTourStepChange}
       />
 
       {/* Tour Banner slide-in invitation */}

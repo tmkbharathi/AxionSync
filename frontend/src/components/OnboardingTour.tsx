@@ -208,7 +208,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
     if (!targetRect || showCelebration) {
       return (
         <div 
-          className="absolute inset-0 bg-slate-950/70 backdrop-blur-[6px] transition-all pointer-events-auto" 
+          className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm transition-all pointer-events-auto" 
           style={{ height: document.documentElement.scrollHeight || '100%' }} 
         />
       );
@@ -226,22 +226,22 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
       <div className="absolute inset-0 pointer-events-none" style={{ height: docHeight }}>
         {/* Top Overlay */}
         <div 
-          className="absolute bg-slate-950/70 backdrop-blur-[6px] pointer-events-auto transition-all duration-200"
+          className="absolute bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-200"
           style={{ top: 0, left: 0, right: 0, height: Math.max(0, t) }}
         />
         {/* Bottom Overlay */}
         <div 
-          className="absolute bg-slate-950/70 backdrop-blur-[6px] pointer-events-auto transition-all duration-200"
+          className="absolute bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-200"
           style={{ top: t + h, left: 0, right: 0, bottom: 0 }}
         />
         {/* Left Overlay */}
         <div 
-          className="absolute bg-slate-950/70 backdrop-blur-[6px] pointer-events-auto transition-all duration-200"
+          className="absolute bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-200"
           style={{ top: t, left: 0, width: Math.max(0, l), height: h }}
         />
         {/* Right Overlay */}
         <div 
-          className="absolute bg-slate-950/70 backdrop-blur-[6px] pointer-events-auto transition-all duration-200"
+          className="absolute bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-200"
           style={{ top: t, left: l + w, right: 0, height: h }}
         />
       </div>

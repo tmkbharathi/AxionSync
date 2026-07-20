@@ -227,46 +227,54 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
     setCurrentStepIdx(0);
   };
 
-  // Render 4 adjacent absolute divs to dim/blur everything except the target spotlight rectangle
+  // Render a single full-screen backdrop overlay with an SVG mask for a smooth animated spotlight cutout
   const renderOverlays = () => {
-    if (!targetRect || showCelebration) {
-      return (
-        <div 
-          className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm transition-all pointer-events-auto" 
-          style={{ height: document.documentElement.scrollHeight || '100%' }} 
-        />
-      );
-    }
+    const docHeight = typeof document !== "undefined" ? (document.documentElement.scrollHeight || window.innerHeight) : "100%";
+    const maskId = `tour-spotlight-mask-${tourKey}`;
 
     const padding = 8;
-    const t = targetRect.top + window.scrollY - padding;
-    const l = targetRect.left + window.scrollX - padding;
-    const w = targetRect.width + padding * 2;
-    const h = targetRect.height + padding * 2;
+    const rx = 12;
 
-    const docHeight = document.documentElement.scrollHeight || window.innerHeight;
+    const targetX = targetRect ? targetRect.left + window.scrollX - padding : 0;
+    const targetY = targetRect ? targetRect.top + window.scrollY - padding : 0;
+    const targetW = targetRect ? Math.max(0, targetRect.width + padding * 2) : 0;
+    const targetH = targetRect ? Math.max(0, targetRect.height + padding * 2) : 0;
 
     return (
       <div className="absolute inset-0 pointer-events-none" style={{ height: docHeight }}>
-        {/* Top Overlay */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ height: docHeight }}>
+          <defs>
+            <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height={docHeight}>
+              {/* White rect covers full screen so backdrop blur displays smoothly everywhere */}
+              <rect x="0" y="0" width="100%" height={docHeight} fill="white" />
+              {/* Black rect smoothly cuts out the spotlight hole for the target element */}
+              {targetRect && !showCelebration && (
+                <motion.rect
+                  initial={false}
+                  animate={{
+                    x: targetX,
+                    y: targetY,
+                    width: targetW,
+                    height: targetH,
+                  }}
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  rx={rx}
+                  ry={rx}
+                  fill="black"
+                />
+              )}
+            </mask>
+          </defs>
+        </svg>
+
+        {/* Single uniform full-screen backdrop overlay */}
         <div 
-          className="absolute bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-200"
-          style={{ top: 0, left: 0, right: 0, height: Math.max(0, t) }}
-        />
-        {/* Bottom Overlay */}
-        <div 
-          className="absolute bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-200"
-          style={{ top: t + h, left: 0, right: 0, bottom: 0 }}
-        />
-        {/* Left Overlay */}
-        <div 
-          className="absolute bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-200"
-          style={{ top: t, left: 0, width: Math.max(0, l), height: h }}
-        />
-        {/* Right Overlay */}
-        <div 
-          className="absolute bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-200"
-          style={{ top: t, left: l + w, right: 0, height: h }}
+          className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-300"
+          style={{ 
+            height: docHeight,
+            mask: `url(#${maskId})`,
+            WebkitMask: `url(#${maskId})`
+          }}
         />
       </div>
     );

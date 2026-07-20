@@ -16,9 +16,10 @@ interface OnboardingTourProps {
   steps: TourStep[];
   isActive: boolean;
   onClose: () => void;
+  onStepChange?: (stepIdx: number, step: TourStep) => void;
 }
 
-export function OnboardingTour({ tourKey, steps, isActive, onClose }: OnboardingTourProps) {
+export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange }: OnboardingTourProps) {
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [showCelebration, setShowCelebration] = useState(false);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
@@ -27,6 +28,13 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
   const [cardCoords, setCardCoords] = useState({ top: 0, left: 0 });
 
   const activeStep = steps[currentStepIdx];
+
+  // Notify parent component of step changes (e.g. to switch mobile tabs or uncollapse panels)
+  useEffect(() => {
+    if (isActive && activeStep && !showCelebration) {
+      onStepChange?.(currentStepIdx, activeStep);
+    }
+  }, [currentStepIdx, isActive, activeStep, showCelebration, onStepChange]);
 
   // Initialize window size
   useEffect(() => {
@@ -53,8 +61,15 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
       if (activeStep.targetId) {
         const element = document.getElementById(activeStep.targetId);
         if (element) {
-          // Scroll element into view if not fully visible
           const rect = element.getBoundingClientRect();
+
+          // If element has no size (e.g. tab transition or display:none), don't set invalid targetRect yet
+          if (rect.width === 0 || rect.height === 0) {
+            setTargetRect(null);
+            return;
+          }
+
+          // Scroll element into view if not fully visible
           const isVisible =
             rect.top >= 0 &&
             rect.left >= 0 &&
@@ -65,7 +80,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
             element.scrollIntoView({ behavior: "smooth", block: "center" });
           }
 
-          // Fetch bounds
+          // Fetch updated bounds
           const updatedRect = element.getBoundingClientRect();
           setTargetRect(updatedRect);
           return;
@@ -74,17 +89,20 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
       setTargetRect(null);
     };
 
-    // Run immediately and setup scroll/resize handlers
+    // Run immediately and setup scroll/resize handlers + delayed retries (for tab animation/DOM mount)
     updatePosition();
     
-    // Sometimes scrollIntoView shifts the elements, so we recalculate after a brief delay
-    const timer = setTimeout(updatePosition, 300);
+    const timer1 = setTimeout(updatePosition, 50);
+    const timer2 = setTimeout(updatePosition, 150);
+    const timer3 = setTimeout(updatePosition, 300);
 
     window.addEventListener("scroll", updatePosition, { passive: true });
     window.addEventListener("resize", updatePosition);
 
     return () => {
-      clearTimeout(timer);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
       window.removeEventListener("scroll", updatePosition);
       window.removeEventListener("resize", updatePosition);
     };
@@ -102,7 +120,13 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
     let left = window.innerWidth / 2 - cardWidth / 2;
 
     if (targetRect && !showCelebration) {
-      const position = activeStep.position || "bottom";
+      let position = activeStep.position || "bottom";
+
+      // On mobile screens (<768px), fallback "left" or "right" to "bottom" or "top" for clear visibility
+      if (window.innerWidth < 768 && (position === "left" || position === "right")) {
+        const spaceBelow = window.innerHeight - targetRect.bottom;
+        position = spaceBelow >= cardHeight + margin ? "bottom" : "top";
+      }
 
       switch (position) {
         case "top":
@@ -203,46 +227,54 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose }: Onboarding
     setCurrentStepIdx(0);
   };
 
-  // Render 4 adjacent absolute divs to dim/blur everything except the target spotlight rectangle
+  // Render a single full-screen backdrop overlay with an SVG mask for a smooth animated spotlight cutout
   const renderOverlays = () => {
-    if (!targetRect || showCelebration) {
-      return (
-        <div 
-          className="absolute inset-0 bg-slate-950/70 backdrop-blur-[6px] transition-all pointer-events-auto" 
-          style={{ height: document.documentElement.scrollHeight || '100%' }} 
-        />
-      );
-    }
+    const docHeight = typeof document !== "undefined" ? (document.documentElement.scrollHeight || window.innerHeight) : "100%";
+    const maskId = `tour-spotlight-mask-${tourKey}`;
 
     const padding = 8;
-    const t = targetRect.top + window.scrollY - padding;
-    const l = targetRect.left + window.scrollX - padding;
-    const w = targetRect.width + padding * 2;
-    const h = targetRect.height + padding * 2;
+    const rx = 12;
 
-    const docHeight = document.documentElement.scrollHeight || window.innerHeight;
+    const targetX = targetRect ? targetRect.left + window.scrollX - padding : 0;
+    const targetY = targetRect ? targetRect.top + window.scrollY - padding : 0;
+    const targetW = targetRect ? Math.max(0, targetRect.width + padding * 2) : 0;
+    const targetH = targetRect ? Math.max(0, targetRect.height + padding * 2) : 0;
 
     return (
       <div className="absolute inset-0 pointer-events-none" style={{ height: docHeight }}>
-        {/* Top Overlay */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ height: docHeight }}>
+          <defs>
+            <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height={docHeight}>
+              {/* White rect covers full screen so backdrop blur displays smoothly everywhere */}
+              <rect x="0" y="0" width="100%" height={docHeight} fill="white" />
+              {/* Black rect smoothly cuts out the spotlight hole for the target element */}
+              {targetRect && !showCelebration && (
+                <motion.rect
+                  initial={false}
+                  animate={{
+                    x: targetX,
+                    y: targetY,
+                    width: targetW,
+                    height: targetH,
+                  }}
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  rx={rx}
+                  ry={rx}
+                  fill="black"
+                />
+              )}
+            </mask>
+          </defs>
+        </svg>
+
+        {/* Single uniform full-screen backdrop overlay */}
         <div 
-          className="absolute bg-slate-950/70 backdrop-blur-[6px] pointer-events-auto transition-all duration-200"
-          style={{ top: 0, left: 0, right: 0, height: Math.max(0, t) }}
-        />
-        {/* Bottom Overlay */}
-        <div 
-          className="absolute bg-slate-950/70 backdrop-blur-[6px] pointer-events-auto transition-all duration-200"
-          style={{ top: t + h, left: 0, right: 0, bottom: 0 }}
-        />
-        {/* Left Overlay */}
-        <div 
-          className="absolute bg-slate-950/70 backdrop-blur-[6px] pointer-events-auto transition-all duration-200"
-          style={{ top: t, left: 0, width: Math.max(0, l), height: h }}
-        />
-        {/* Right Overlay */}
-        <div 
-          className="absolute bg-slate-950/70 backdrop-blur-[6px] pointer-events-auto transition-all duration-200"
-          style={{ top: t, left: l + w, right: 0, height: h }}
+          className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-300"
+          style={{ 
+            height: docHeight,
+            mask: `url(#${maskId})`,
+            WebkitMask: `url(#${maskId})`
+          }}
         />
       </div>
     );

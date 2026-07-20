@@ -538,6 +538,7 @@ function Home() {
                   if (res.data.success && res.data.token) {
                     setIsVerified(true);
                     sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
+                    sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, res.data.isMasterAdmin ? "true" : "false");
                     setTimeout(() => {
                       router.push(`/${ADMIN_SESSION_ID}`);
                       setShowAdminModal(false);
@@ -599,7 +600,7 @@ function Home() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-blue-950/70 backdrop-blur-[6px]"
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-sm"
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}

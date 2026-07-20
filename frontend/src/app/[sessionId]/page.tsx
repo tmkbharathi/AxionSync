@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from "uuid";
 import { 
   X, Monitor, LogOut, Trash2, Lock, Unlock, Cloud, AlertTriangle, 
   Copy, CheckCircle, ChevronsLeft, ChevronsRight, Smartphone,
-  Sparkles, ArrowRight
+  Sparkles, ArrowRight, Clock, Home
 } from "lucide-react";
 
 import { siteConfig } from "@/config/site";
@@ -25,6 +25,7 @@ import { SessionHeader } from "@/components/session/SessionHeader";
 import { SessionFooter } from "@/components/session/SessionFooter";
 import { ClipboardPanel } from "@/components/session/ClipboardPanel";
 import { FileManagerPanel } from "@/components/session/FileManagerPanel";
+import { ShareAdminModal } from "@/components/session/ShareAdminModal";
 
 // Dynamic imports for heavy components
 const Background3D = dynamic(() => import("@/components/Background3D").then(mod => mod.Background3D), { 
@@ -190,6 +191,15 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [sessionId]);
 
+  const handleTourStepChange = useCallback((_stepIdx: number, step: { targetId?: string }) => {
+    if (step.targetId === "tour-files") {
+      setActiveTab("files");
+      setIsFilePanelCollapsed(false);
+    } else if (step.targetId === "tour-clipboard" || step.targetId === "tour-mic") {
+      setActiveTab("text");
+    }
+  }, []);
+
   useEffect(() => {
     if (hasMounted && isAdminUnlocked && !isValidating && !sessionError) {
       const isCompleted = localStorage.getItem("syncosync:tour:session");
@@ -200,15 +210,78 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   }, [hasMounted, isAdminUnlocked, isValidating, sessionError]);
 
+  const [showShareAdminModal, setShowShareAdminModal] = useState(false);
+  const [activePasscodesCount, setActivePasscodesCount] = useState<number>(0);
+  const [isMasterAdmin, setIsMasterAdmin] = useState<boolean>(false);
+  const [guestRemainingSeconds, setGuestRemainingSeconds] = useState<number | null>(null);
+  const [guestExpiresAt, setGuestExpiresAt] = useState<number | null>(null);
+  const [showPasscodeExpiredModal, setShowPasscodeExpiredModal] = useState<boolean>(false);
+  const [permissions, setPermissions] = useState<{ allowText?: boolean; allowFiles?: boolean; allowUploads?: boolean }>({ allowText: true, allowFiles: true, allowUploads: true });
+
   useEffect(() => {
     setHasMounted(true);
     if (sessionId === ADMIN_SESSION_ID) {
-      const token = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
-      setIsAdminUnlocked(!!token);
+      const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const passcodeParam = urlParams?.get("passcode");
+
+      if (passcodeParam) {
+        setAdminPasswordValue(passcodeParam);
+        axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, { password: passcodeParam })
+          .then(res => {
+            if (res.data.success && res.data.token) {
+              const isMaster = res.data.isMasterAdmin === true;
+              sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
+              sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, isMaster ? "true" : "false");
+              setIsMasterAdmin(isMaster);
+              if (res.data.permissions) {
+                setPermissions(res.data.permissions);
+              }
+              if (res.data.remainingSeconds) {
+                setGuestRemainingSeconds(res.data.remainingSeconds);
+              }
+              if (res.data.expiresAt) {
+                setGuestExpiresAt(res.data.expiresAt);
+              }
+              setIsAdminUnlocked(true);
+            }
+          })
+          .catch(err => {
+            console.error("Auto unlock with passcode param failed:", err);
+            setShowPasscodeExpiredModal(true);
+            setIsValidating(false);
+          });
+      } else {
+        const token = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
+        const isGuest = sessionStorage.getItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`) === "false";
+        if (token) {
+          setIsAdminUnlocked(true);
+          setIsMasterAdmin(!isGuest);
+        }
+      }
     } else {
       setIsAdminUnlocked(true);
     }
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!isAdminUnlocked || sessionId !== ADMIN_SESSION_ID || !isMasterAdmin) return;
+    const token = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
+    if (!token) return;
+
+    const fetchActiveCount = () => {
+      axios.get(`${API_URL}/session/${sessionId}/share/passcodes`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(res => {
+        setActivePasscodesCount(res.data.passcodes?.length || 0);
+      }).catch(err => {
+        console.warn("Could not load share passcodes count:", err);
+      });
+    };
+
+    fetchActiveCount();
+    const interval = setInterval(fetchActiveCount, 4000);
+    return () => clearInterval(interval);
+  }, [sessionId, isAdminUnlocked, isMasterAdmin]);
 
   useEffect(() => {
     if (!isAdminUnlocked) return;
@@ -220,11 +293,25 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       .then((res) => {
         setText(res.data.text || "");
         setFiles(res.data.files || []);
+        if (res.data.permissions) {
+          setPermissions(res.data.permissions);
+        }
+        if (res.data.guestRemainingSeconds) {
+          setGuestRemainingSeconds(res.data.guestRemainingSeconds);
+        }
+        if (res.data.guestExpiresAt) {
+          setGuestExpiresAt(res.data.guestExpiresAt);
+        }
         if (res.data.text) localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, res.data.text);
         setIsValidating(false);
       })
       .catch(err => {
-        if (err.response?.status === 410) {
+        if (err.response?.status === 401 && sessionId === ADMIN_SESSION_ID) {
+          sessionStorage.removeItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
+          sessionStorage.removeItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`);
+          setShowPasscodeExpiredModal(true);
+          setIsValidating(false);
+        } else if (err.response?.status === 410) {
           router.replace("/?status=not_found&origin=purged");
         } else if (err.response?.status === 404) {
           router.replace(`/?status=not_found&origin=missing&id=${sessionId}`);
@@ -253,13 +340,42 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     newSocket.on("room_size", (size: number) => setRoomSize(size));
     newSocket.on("room_devices", (devices: ActiveDevice[]) => setActiveDevices(devices));
     newSocket.on("file_deleted", (id: string) => setFiles((p) => p.filter((f) => f.id !== id)));
+    newSocket.on("passcode_revoked", () => {
+      if (!isMasterAdmin) {
+        const token = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
+        axios.get(`${API_URL}/session/${sessionId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(err => {
+          if (err.response?.status === 401) {
+            sessionStorage.removeItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
+            sessionStorage.removeItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`);
+            setIsAdminUnlocked(false);
+            setShowPasscodeExpiredModal(true);
+          }
+        });
+      }
+    });
+    newSocket.on("passcode_permissions_updated", ({ permissions }: { permissions: any }) => {
+      if (!isMasterAdmin && permissions) {
+        setPermissions(permissions);
+        const token = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
+        if (token) {
+          axios.get(`${API_URL}/session/${sessionId}`, { headers: { Authorization: `Bearer ${token}` } })
+            .then(res => {
+              if (res.data.permissions) setPermissions(res.data.permissions);
+              setText(res.data.text || "");
+              setFiles(res.data.files || []);
+            }).catch(() => {});
+        }
+      }
+    });
     newSocket.on("session_deleted", () => {
       localStorage.removeItem(`${siteConfig.slug}:text:${sessionId}`);
       router.push("/?status=deleted&origin=other");
     });
 
     return () => { newSocket.disconnect(); };
-  }, [sessionId, router, isAdminUnlocked]);
+  }, [sessionId, router, isAdminUnlocked, isMasterAdmin]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -412,85 +528,142 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none" />
 
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          className="max-w-sm w-full bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-10 rounded-[2.5rem] shadow-2xl relative z-10 text-center"
-        >
+        {showPasscodeExpiredModal ? (
           <motion.div 
-            animate={{
-              backgroundColor: isVerified ? "rgba(16, 185, 129, 0.15)" : "rgba(37, 99, 235, 0.15)",
-              borderColor: isVerified ? "rgba(16, 185, 129, 0.3)" : "rgba(37, 99, 235, 0.3)"
-            }}
-            className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-8 border border-transparent transition-colors relative"
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="max-w-md w-full bg-slate-900/90 backdrop-blur-xl border border-amber-500/30 p-8 rounded-3xl shadow-2xl relative z-10 text-center"
           >
-            <AnimatePresence initial={false}>
-              <motion.div
-                key={isVerified ? 'unlocked' : 'locked'}
-                initial={{ scale: 0.8, opacity: 0, rotate: -15 }}
-                animate={{ scale: 1, opacity: 1, rotate: 0 }}
-                exit={{ scale: 0.8, opacity: 0, rotate: 15 }}
-                transition={{ type: "spring", stiffness: 400, damping: 28 }}
-                className="absolute inset-0 flex items-center justify-center"
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto mb-6 text-amber-400 shadow-lg shadow-amber-500/10">
+              <Clock className="w-8 h-8 animate-pulse" />
+            </div>
+
+            <h2 className="text-2xl font-bold text-white mb-2">Passcode Expired</h2>
+            <p className="text-slate-300 text-sm leading-relaxed mb-6">
+              This temporary access passcode or link has expired. Please contact the room administrator to request a new passcode.
+            </p>
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  setShowPasscodeExpiredModal(false);
+                  router.push("/");
+                }}
+                className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-amber-500/20 text-sm flex items-center justify-center gap-2 cursor-pointer"
               >
-                {isVerified ? (
-                  <Unlock className="w-10 h-10 text-emerald-400" />
-                ) : (
-                  <Lock className="w-10 h-10 text-blue-400 opacity-80" />
-                )}
-              </motion.div>
-            </AnimatePresence>
+                <Home className="w-4 h-4" />
+                Return to Homepage
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowPasscodeExpiredModal(false);
+                  if (typeof window !== "undefined") {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("passcode");
+                    window.history.replaceState({}, "", url.toString());
+                  }
+                }}
+                className="w-full py-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white font-medium rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                Try Permanent Password
+              </button>
+            </div>
           </motion.div>
-          
-          <h1 className="text-2xl font-bold mb-2">Reserved Admin Space</h1>
-          <p className="text-slate-500 text-xs mb-8 uppercase tracking-widest font-bold">Encrypted Session: {ADMIN_SESSION_ID}</p>
-          
-          <form onSubmit={async (e) => {
-            e.preventDefault();
-            try {
-              const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, {
-                password: adminPasswordValue
-              });
-              if (res.data.success && res.data.token) {
-                setIsVerified(true);
-                sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
-                setTimeout(() => {
-                  setIsAdminUnlocked(true);
-                  setIsVerified(false);
-                }, 800);
-              } else {
+        ) : (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="max-w-sm w-full bg-slate-900/40 backdrop-blur-xl border border-slate-800 p-10 rounded-[2.5rem] shadow-2xl relative z-10 text-center"
+          >
+            <motion.div 
+              animate={{
+                backgroundColor: isVerified ? "rgba(16, 185, 129, 0.15)" : "rgba(37, 99, 235, 0.15)",
+                borderColor: isVerified ? "rgba(16, 185, 129, 0.3)" : "rgba(37, 99, 235, 0.3)"
+              }}
+              className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-8 border border-transparent transition-colors relative"
+            >
+              <AnimatePresence initial={false}>
+                <motion.div
+                  key={isVerified ? 'unlocked' : 'locked'}
+                  initial={{ scale: 0.8, opacity: 0, rotate: -15 }}
+                  animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                  exit={{ scale: 0.8, opacity: 0, rotate: 15 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 28 }}
+                  className="absolute inset-0 flex items-center justify-center"
+                >
+                  {isVerified ? (
+                    <Unlock className="w-10 h-10 text-emerald-400" />
+                  ) : (
+                    <Lock className="w-10 h-10 text-blue-400 opacity-80" />
+                  )}
+                </motion.div>
+              </AnimatePresence>
+            </motion.div>
+            
+            <h1 className="text-2xl font-bold mb-2">Reserved Admin Space</h1>
+            <p className="text-slate-500 text-xs mb-8 uppercase tracking-widest font-bold">Encrypted Session: {ADMIN_SESSION_ID}</p>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, {
+                  password: adminPasswordValue
+                });
+                if (res.data.success && res.data.token) {
+                  const isMaster = res.data.isMasterAdmin === true;
+                  setIsVerified(true);
+                  sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
+                  sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, isMaster ? "true" : "false");
+                  setIsMasterAdmin(isMaster);
+                  if (res.data.remainingSeconds) {
+                    setGuestRemainingSeconds(res.data.remainingSeconds);
+                  }
+                  if (res.data.expiresAt) {
+                    setGuestExpiresAt(res.data.expiresAt);
+                  }
+                  setTimeout(() => {
+                    setIsAdminUnlocked(true);
+                    setIsVerified(false);
+                  }, 800);
+                } else {
+                  setAdminAuthError(true);
+                  setTimeout(() => setAdminAuthError(false), 2000);
+                }
+              } catch (err: any) {
                 setAdminAuthError(true);
+                if (err.response?.status === 401) {
+                  setShowPasscodeExpiredModal(true);
+                }
                 setTimeout(() => setAdminAuthError(false), 2000);
               }
-            } catch (err) {
-              setAdminAuthError(true);
-              setTimeout(() => setAdminAuthError(false), 2000);
-            }
-          }}>
-            <input
-              type="password"
-              autoFocus
-              placeholder="Enter Password"
-              value={adminPasswordValue}
-              onChange={(e) => setAdminPasswordValue(e.target.value)}
-              className={`w-full py-4 px-4 bg-slate-900/50 border-2 ${adminAuthError ? 'border-rose-500/50' : 'border-slate-800 focus:border-blue-500/50'} rounded-2xl text-center outline-none transition-all placeholder:text-slate-700 mb-6 font-mono tracking-widest`}
-            />
-            
-            <button
-              type="submit"
-              className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-500/20 active:scale-95"
-            >
-              Verify Identity
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push("/")}
-              className="w-full mt-4 py-2 text-slate-500 hover:text-slate-300 text-sm font-medium transition-colors"
-            >
-              Leave Session
-            </button>
-          </form>
-        </motion.div>
+            }}>
+              <input
+                type="password"
+                autoFocus
+                placeholder="Enter Password"
+                value={adminPasswordValue}
+                onChange={(e) => setAdminPasswordValue(e.target.value)}
+                className={`w-full py-4 px-4 bg-slate-900/50 border-2 ${adminAuthError ? 'border-rose-500/50' : 'border-slate-800 focus:border-blue-500/50'} rounded-2xl text-center outline-none transition-all placeholder:text-slate-700 mb-6 font-mono tracking-widest`}
+              />
+              
+              <button
+                type="submit"
+                className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-500/20 active:scale-95"
+              >
+                Verify Identity
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                className="w-full mt-4 py-2 text-slate-500 hover:text-slate-300 text-sm font-medium transition-colors"
+              >
+                Leave Session
+              </button>
+            </form>
+          </motion.div>
+        )}
       </div>
     );
   }
@@ -544,6 +717,12 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         handleDeleteSession={handleDeleteSession}
         isPro={sessionId === ADMIN_SESSION_ID}
         onStartTour={() => setIsTourActive(true)}
+        setShowShareAdminModal={setShowShareAdminModal}
+        activePasscodesCount={activePasscodesCount}
+        isMasterAdmin={isMasterAdmin}
+        guestRemainingSeconds={guestRemainingSeconds}
+        guestExpiresAt={guestExpiresAt}
+        onPasscodeExpired={() => setShowPasscodeExpiredModal(true)}
       />
 
       {/* Mobile Tabs */}
@@ -571,6 +750,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           initialText={text}
           activeTab={activeTab}
           isFilePanelCollapsed={isFilePanelCollapsed}
+          permissions={permissions}
         />
 
         {/* Divider desktop with collapse toggle */}
@@ -595,6 +775,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           handleDeleteFile={handleDeleteFile}
           setIsFilePanelCollapsed={setIsFilePanelCollapsed}
           isAdminSession={sessionId === ADMIN_SESSION_ID}
+          permissions={permissions}
         />
       </main>
 
@@ -754,6 +935,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         steps={SESSION_TOUR_STEPS}
         isActive={isTourActive}
         onClose={() => setIsTourActive(false)}
+        onStepChange={handleTourStepChange}
       />
 
       {/* Tour Banner slide-in invitation */}
@@ -763,7 +945,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-blue-950/70 backdrop-blur-[6px]"
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-sm"
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -817,6 +999,72 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                   className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-none"
                 >
                   Dismiss
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Expiring Share Passcode Modal */}
+      <ShareAdminModal
+        isOpen={showShareAdminModal}
+        onClose={() => setShowShareAdminModal(false)}
+        sessionId={sessionId}
+        token={typeof window !== "undefined" ? sessionStorage.getItem(`syncosync:auth:${sessionId}`) : null}
+        apiUrl={API_URL}
+        onPasscodesCountChange={setActivePasscodesCount}
+      />
+
+      {/* Session Passcode Expired Modal */}
+      <AnimatePresence>
+        {showPasscodeExpiredModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="max-w-md w-full bg-slate-900/90 border border-amber-500/30 p-8 rounded-3xl shadow-2xl relative text-center"
+            >
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto mb-6 text-amber-400 shadow-lg shadow-amber-500/10">
+                <Clock className="w-8 h-8 animate-pulse" />
+              </div>
+
+              <h2 className="text-2xl font-bold text-white mb-2">Passcode Expired</h2>
+              <p className="text-slate-300 text-sm leading-relaxed mb-6">
+                This temporary access passcode or link has expired. Please contact the room administrator to request a new passcode.
+              </p>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => {
+                    setShowPasscodeExpiredModal(false);
+                    router.push("/");
+                  }}
+                  className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold rounded-xl transition-all shadow-lg shadow-amber-500/20 text-sm flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Home className="w-4 h-4" />
+                  Return to Homepage
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowPasscodeExpiredModal(false);
+                    if (typeof window !== "undefined") {
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete("passcode");
+                      window.history.replaceState({}, "", url.toString());
+                    }
+                  }}
+                  className="w-full py-3 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white font-medium rounded-xl transition-all text-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  Try Master Password
                 </button>
               </div>
             </motion.div>

@@ -5,6 +5,50 @@ const crypto = require("crypto");
 const { redis, ALL_SESSIONS_KEY } = require("../config/redis");
 const { getStorageClientAndBucket } = require("../config/storage");
 
+// Helper function to validate admin token (master or guest)
+async function verifyAdminToken(sessionId, token) {
+  if (!token) return false;
+  const storedToken = await redis.get(`session:${sessionId}:token`);
+  if (storedToken && storedToken === token) return true;
+
+  const val = await redis.get(`session:${sessionId}:token:${token}`);
+  if (val) return true;
+
+  return false;
+}
+
+// Helper function to validate master admin token only
+async function verifyMasterAdminToken(sessionId, token) {
+  if (!token) return false;
+  const storedToken = await redis.get(`session:${sessionId}:token`);
+  if (storedToken && storedToken === token) return true;
+
+  const val = await redis.get(`session:${sessionId}:token:${token}`);
+  if (!val) return false;
+  if (val === "master") return true;
+  try {
+    const parsed = JSON.parse(val);
+    if (parsed.role === "master") return true;
+  } catch (e) {}
+
+  return false;
+}
+
+// Helper function to get token permissions
+async function getTokenPermissions(sessionId, token) {
+  const defaultPerms = { allowText: true, allowFiles: true, allowUploads: true };
+  if (!token) return defaultPerms;
+  const val = await redis.get(`session:${sessionId}:token:${token}`);
+  if (!val) return defaultPerms;
+  if (val === "master") return defaultPerms;
+  try {
+    const parsed = JSON.parse(val);
+    if (parsed.role === "master") return defaultPerms;
+    if (parsed.permissions) return parsed.permissions;
+  } catch (e) {}
+  return defaultPerms;
+}
+
 // Unlock Session Passcode
 async function unlockSession(req, res) {
   const { sessionId } = req.params;
@@ -16,18 +60,73 @@ async function unlockSession(req, res) {
   }
 
   const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "tmkbharathi";
+  
+  // 1. Check Master Admin Password
   if (password === ADMIN_PASSWORD) {
-    // Generate secure random token
     const token = crypto.randomBytes(16).toString("hex");
     const tokenKey = `session:${sessionId}:token`;
-    
-    // Store in Redis with 24 hours TTL
     await redis.set(tokenKey, token, "EX", 86400);
+    await redis.set(`session:${sessionId}:token:${token}`, JSON.stringify({ role: "master" }), "EX", 86400);
 
-    return res.json({ success: true, token });
-  } else {
-    return res.status(401).json({ error: "Invalid passcode." });
+    return res.json({ 
+      success: true, 
+      token, 
+      isMasterAdmin: true,
+      permissions: { allowText: true, allowFiles: true, allowUploads: true }
+    });
   }
+
+  // 2. Check Temporary Expiring Guest Passcodes
+  const guestKey = `session:${sessionId}:guest_passcode:${password}`;
+  const guestDataRaw = await redis.get(guestKey);
+
+  if (guestDataRaw) {
+    let guestData = {};
+    try { guestData = JSON.parse(guestDataRaw); } catch (e) {}
+
+    const remainingTtl = await redis.ttl(guestKey);
+    const tokenTtl = remainingTtl > 0 ? remainingTtl : 3600;
+    const guestExpiresAt = guestData.expiresAt || (Date.now() + (tokenTtl * 1000));
+    const guestPermissions = guestData.permissions || { allowText: true, allowFiles: true, allowUploads: true };
+
+    if (guestData.maxUses && guestData.maxUses > 0) {
+      guestData.uses = (guestData.uses || 0) + 1;
+      if (guestData.uses >= guestData.maxUses) {
+        await redis.del(guestKey);
+        await redis.srem(`session:${sessionId}:guest_passcodes_set`, password);
+      } else {
+        await redis.set(guestKey, JSON.stringify(guestData), "EX", remainingTtl);
+      }
+    }
+
+    const token = crypto.randomBytes(16).toString("hex");
+    await redis.set(
+      `session:${sessionId}:token:${token}`, 
+      JSON.stringify({ 
+        role: "guest", 
+        passcode: password,
+        expiresAt: guestExpiresAt,
+        permissions: guestPermissions
+      }), 
+      "EX", 
+      tokenTtl
+    );
+
+    const tokenSetKey = `session:${sessionId}:passcode_tokens:${password}`;
+    await redis.sadd(tokenSetKey, token);
+    await redis.expire(tokenSetKey, tokenTtl);
+
+    return res.json({ 
+      success: true, 
+      token, 
+      isMasterAdmin: false,
+      expiresAt: guestExpiresAt,
+      remainingSeconds: Math.max(0, Math.floor((guestExpiresAt - Date.now()) / 1000)),
+      permissions: guestPermissions
+    });
+  }
+
+  return res.status(401).json({ error: "Invalid passcode or expired link." });
 }
 
 // Get Session Details
@@ -45,9 +144,9 @@ async function getSession(req, res) {
     if (isAdminSession) {
       const authHeader = req.headers.authorization;
       const token = authHeader && authHeader.split(" ")[1];
-      const storedToken = await redis.get(`session:${sessionId}:token`);
+      const isValid = await verifyAdminToken(sessionId, token);
 
-      if (!token || token !== storedToken) {
+      if (!isValid) {
         return res.status(401).json({ error: "Unauthorized access. Passcode required." });
       }
     }
@@ -103,8 +202,45 @@ async function getSession(req, res) {
       .expire(filesKey, metadataExpiry)
       .exec();
 
+    let guestRemainingSeconds = null;
+    let guestExpiresAt = null;
+    let permissions = { allowText: true, allowFiles: true, allowUploads: true };
+
+    if (isAdminSession) {
+      const authHeader = req.headers.authorization;
+      const token = authHeader && authHeader.split(" ")[1];
+      if (token) {
+        const val = await redis.get(`session:${sessionId}:token:${token}`);
+        if (val) {
+          try {
+            const parsed = JSON.parse(val);
+            if (parsed.role === "guest") {
+              if (parsed.expiresAt) {
+                guestExpiresAt = parsed.expiresAt;
+                guestRemainingSeconds = Math.max(0, Math.floor((parsed.expiresAt - Date.now()) / 1000));
+              }
+              if (parsed.permissions) {
+                permissions = parsed.permissions;
+              }
+            }
+          } catch (e) {
+            if (val === "guest") {
+              const ttl = await redis.ttl(`session:${sessionId}:token:${token}`);
+              if (ttl > 0) {
+                guestRemainingSeconds = ttl;
+                guestExpiresAt = Date.now() + (ttl * 1000);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const filteredText = permissions.allowText ? (text || "") : "";
+    const filteredFiles = permissions.allowFiles ? files : [];
+
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.json({ text: text || "", files });
+    res.json({ text: filteredText, files: filteredFiles, guestRemainingSeconds, guestExpiresAt, permissions });
   } catch (e) {
     console.error("Session load error:", e);
     res.status(500).json({ error: "Failed to load session" });
@@ -126,9 +262,9 @@ async function deleteSession(req, res, io) {
     if (isAdminSession) {
       const authHeader = req.headers.authorization;
       const token = authHeader && authHeader.split(" ")[1];
-      const storedToken = await redis.get(`session:${sessionId}:token`);
+      const isValid = await verifyAdminToken(sessionId, token);
 
-      if (!token || token !== storedToken) {
+      if (!isValid) {
         return res.status(401).json({ error: "Unauthorized access. Passcode required." });
       }
     }
@@ -175,10 +311,15 @@ async function presignUpload(req, res) {
   if (isAdminSession) {
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(" ")[1];
-    const storedToken = await redis.get(`session:${sessionId}:token`);
+    const isValid = await verifyAdminToken(sessionId, token);
 
-    if (!token || token !== storedToken) {
+    if (!isValid) {
       return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+    }
+
+    const perms = await getTokenPermissions(sessionId, token);
+    if (!perms.allowFiles || !perms.allowUploads) {
+      return res.status(403).json({ error: "File uploads are disabled by room admin." });
     }
   }
 
@@ -246,10 +387,15 @@ async function confirmUpload(req, res, io) {
   if (isAdminSession) {
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(" ")[1];
-    const storedToken = await redis.get(`session:${sessionId}:token`);
+    const isValid = await verifyAdminToken(sessionId, token);
 
-    if (!token || token !== storedToken) {
+    if (!isValid) {
       return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+    }
+
+    const perms = await getTokenPermissions(sessionId, token);
+    if (!perms.allowFiles || !perms.allowUploads) {
+      return res.status(403).json({ error: "File uploads are disabled by room admin." });
     }
   }
 
@@ -374,9 +520,9 @@ async function downloadFile(req, res) {
     if (isAdminSession) {
       const authHeader = req.headers.authorization;
       const token = authHeader && authHeader.split(" ")[1];
-      const storedToken = await redis.get(`session:${sessionId}:token`);
+      const isValid = await verifyAdminToken(sessionId, token);
 
-      if (!token || token !== storedToken) {
+      if (!isValid) {
         return res.status(401).json({ error: "Unauthorized access. Passcode required." });
       }
     }
@@ -416,6 +562,234 @@ async function initSession(req, res) {
   }
 }
 
+// Create Share Expiring Passcode
+async function createSharePasscode(req, res) {
+  const { sessionId } = req.params;
+  const { 
+    durationSeconds = 3600, 
+    passcode: customPasscode, 
+    maxUses, 
+    label,
+    permissions = { allowText: true, allowFiles: true, allowUploads: true }
+  } = req.body;
+
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+  if (!isAdminSession) {
+    return res.status(400).json({ error: "Expiring passcodes are only supported for reserved admin sessions." });
+  }
+
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+  const isValid = await verifyMasterAdminToken(sessionId, token);
+
+  if (!isValid) {
+    return res.status(401).json({ error: "Unauthorized. Master admin token required." });
+  }
+
+  let passcode = customPasscode ? String(customPasscode).trim() : "";
+  if (!passcode) {
+    passcode = Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  const duration = Math.min(Math.max(parseInt(durationSeconds, 10) || 3600, 60), 7 * 86400);
+  const guestKey = `session:${sessionId}:guest_passcode:${passcode}`;
+
+  const payload = {
+    passcode,
+    label: label || `Passcode ${passcode}`,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + (duration * 1000),
+    durationSeconds: duration,
+    maxUses: maxUses ? parseInt(maxUses, 10) : null,
+    uses: 0,
+    permissions: {
+      allowText: permissions?.allowText !== false,
+      allowFiles: permissions?.allowFiles !== false,
+      allowUploads: permissions?.allowUploads !== false
+    }
+  };
+
+  await redis.set(guestKey, JSON.stringify(payload), "EX", duration);
+
+  const setKey = `session:${sessionId}:guest_passcodes_set`;
+  await redis.sadd(setKey, passcode);
+  await redis.expire(setKey, 86400 * 365);
+
+  res.json({
+    success: true,
+    passcode: {
+      ...payload,
+      remainingSeconds: duration
+    }
+  });
+}
+
+// List Share Passcodes
+async function listSharePasscodes(req, res) {
+  const { sessionId } = req.params;
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+  if (!isAdminSession) {
+    return res.status(400).json({ error: "Expiring passcodes are only supported for reserved admin sessions." });
+  }
+
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+  const isValid = await verifyMasterAdminToken(sessionId, token);
+
+  if (!isValid) {
+    return res.status(401).json({ error: "Unauthorized. Master admin token required." });
+  }
+
+  const setKey = `session:${sessionId}:guest_passcodes_set`;
+  const passcodesList = await redis.smembers(setKey);
+
+  const activePasscodes = [];
+  const stalePasscodes = [];
+
+  for (const code of passcodesList) {
+    const guestKey = `session:${sessionId}:guest_passcode:${code}`;
+    const rawData = await redis.get(guestKey);
+    const ttl = await redis.ttl(guestKey);
+
+    if (!rawData || ttl <= 0) {
+      stalePasscodes.push(code);
+    } else {
+      try {
+        const parsed = JSON.parse(rawData);
+        if (parsed.expiresAt && parsed.expiresAt <= Date.now()) {
+          stalePasscodes.push(code);
+        } else {
+          activePasscodes.push({
+            ...parsed,
+            permissions: parsed.permissions || { allowText: true, allowFiles: true, allowUploads: true },
+            remainingSeconds: ttl > 0 ? ttl : 0
+          });
+        }
+      } catch (e) {
+        stalePasscodes.push(code);
+      }
+    }
+  }
+
+  if (stalePasscodes.length > 0) {
+    await redis.srem(setKey, ...stalePasscodes);
+  }
+
+  res.json({ passcodes: activePasscodes });
+}
+
+// Revoke Share Passcode
+async function revokeSharePasscode(req, res, io) {
+  const { sessionId, code } = req.params;
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+  if (!isAdminSession) {
+    return res.status(400).json({ error: "Expiring passcodes are only supported for reserved admin sessions." });
+  }
+
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+  const isValid = await verifyMasterAdminToken(sessionId, token);
+
+  if (!isValid) {
+    return res.status(401).json({ error: "Unauthorized. Master admin token required." });
+  }
+
+  const guestKey = `session:${sessionId}:guest_passcode:${code}`;
+  const setKey = `session:${sessionId}:guest_passcodes_set`;
+
+  await redis.del(guestKey);
+  await redis.srem(setKey, code);
+
+  const tokenSetKey = `session:${sessionId}:passcode_tokens:${code}`;
+  const associatedTokens = await redis.smembers(tokenSetKey);
+  if (associatedTokens && associatedTokens.length > 0) {
+    const pipeline = redis.pipeline();
+    associatedTokens.forEach(t => {
+      pipeline.del(`session:${sessionId}:token:${t}`);
+    });
+    pipeline.del(tokenSetKey);
+    await pipeline.exec();
+  }
+
+  if (io) {
+    io.to(sessionId).emit("passcode_revoked", { passcode: code });
+  }
+
+  res.json({ success: true, code });
+}
+
+// Update Share Passcode Permissions
+async function updateSharePasscodePermissions(req, res, io) {
+  const { sessionId, code } = req.params;
+  const { permissions } = req.body;
+
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+  if (!isAdminSession) {
+    return res.status(400).json({ error: "Expiring passcodes are only supported for reserved admin sessions." });
+  }
+
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+  const isValid = await verifyMasterAdminToken(sessionId, token);
+
+  if (!isValid) {
+    return res.status(401).json({ error: "Unauthorized. Master admin token required." });
+  }
+
+  const guestKey = `session:${sessionId}:guest_passcode:${code}`;
+  const rawData = await redis.get(guestKey);
+  if (!rawData) {
+    return res.status(404).json({ error: "Passcode not found or expired." });
+  }
+
+  let parsed = {};
+  try { parsed = JSON.parse(rawData); } catch (e) {}
+
+  const newPermissions = {
+    allowText: permissions?.allowText !== false,
+    allowFiles: permissions?.allowFiles !== false,
+    allowUploads: permissions?.allowUploads !== false
+  };
+
+  parsed.permissions = newPermissions;
+
+  const ttl = await redis.ttl(guestKey);
+  if (ttl > 0) {
+    await redis.set(guestKey, JSON.stringify(parsed), "EX", ttl);
+  } else {
+    await redis.set(guestKey, JSON.stringify(parsed));
+  }
+
+  // Update active guest tokens generated from this passcode
+  const tokenSetKey = `session:${sessionId}:passcode_tokens:${code}`;
+  const associatedTokens = await redis.smembers(tokenSetKey);
+  if (associatedTokens && associatedTokens.length > 0) {
+    for (const t of associatedTokens) {
+      const tKey = `session:${sessionId}:token:${t}`;
+      const tVal = await redis.get(tKey);
+      if (tVal) {
+        try {
+          const tParsed = JSON.parse(tVal);
+          tParsed.permissions = newPermissions;
+          const tTtl = await redis.ttl(tKey);
+          if (tTtl > 0) {
+            await redis.set(tKey, JSON.stringify(tParsed), "EX", tTtl);
+          } else {
+            await redis.set(tKey, JSON.stringify(tParsed));
+          }
+        } catch (e) {}
+      }
+    }
+  }
+
+  // Broadcast real-time permission update via WebSockets
+  if (io) {
+    io.to(sessionId).emit("passcode_permissions_updated", { passcode: code, permissions: newPermissions });
+  }
+
+  res.json({ success: true, code, permissions: newPermissions });
+}
+
 module.exports = {
   unlockSession,
   getSession,
@@ -423,5 +797,9 @@ module.exports = {
   presignUpload,
   confirmUpload,
   downloadFile,
-  initSession
+  initSession,
+  createSharePasscode,
+  listSharePasscodes,
+  revokeSharePasscode,
+  updateSharePasscodePermissions
 };

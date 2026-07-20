@@ -22,6 +22,12 @@ function getSessionRouter(io) {
   // Init route
   router.post("/session/:sessionId/init", controller.initSession);
 
+  // Share Expiring Passcode routes
+  router.post("/session/:sessionId/share/create-passcode", controller.createSharePasscode);
+  router.get("/session/:sessionId/share/passcodes", controller.listSharePasscodes);
+  router.delete("/session/:sessionId/share/passcodes/:code", (req, res) => controller.revokeSharePasscode(req, res, io));
+  router.patch("/session/:sessionId/share/passcodes/:code/permissions", (req, res) => controller.updateSharePasscodePermissions(req, res, io));
+
   return router;
 }
 

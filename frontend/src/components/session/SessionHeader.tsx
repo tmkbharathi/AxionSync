@@ -1,8 +1,8 @@
 "use client";
 
-import { memo } from "react";
+import { useState, useEffect, memo } from "react";
 import { 
-  Smartphone, Info, HelpCircle, QrCode, Share2, Trash2, LogOut, CheckCircle, Share
+  Smartphone, Info, HelpCircle, QrCode, Share2, Trash2, LogOut, CheckCircle, KeyRound, Clock
 } from "lucide-react";
 import { siteConfig } from "@/config/site";
 
@@ -16,7 +16,13 @@ export const SessionHeader = memo(({
   copiedLink,
   handleDeleteSession,
   isPro,
-  onStartTour
+  onStartTour,
+  setShowShareAdminModal,
+  activePasscodesCount,
+  isMasterAdmin,
+  guestRemainingSeconds,
+  guestExpiresAt,
+  onPasscodeExpired
 }: { 
   connected: boolean, 
   roomSize: number, 
@@ -27,8 +33,60 @@ export const SessionHeader = memo(({
   copiedLink: boolean,
   handleDeleteSession: () => void,
   isPro: boolean,
-  onStartTour: () => void
+  onStartTour: () => void,
+  setShowShareAdminModal?: (v: boolean) => void,
+  activePasscodesCount?: number,
+  isMasterAdmin?: boolean,
+  guestRemainingSeconds?: number | null,
+  guestExpiresAt?: number | null,
+  onPasscodeExpired?: () => void
 }) => {
+  const [countdown, setCountdown] = useState<number | null>(() => {
+    if (guestExpiresAt) return Math.max(0, Math.floor((guestExpiresAt - Date.now()) / 1000));
+    return guestRemainingSeconds ?? null;
+  });
+
+  useEffect(() => {
+    if (guestExpiresAt) {
+      setCountdown(Math.max(0, Math.floor((guestExpiresAt - Date.now()) / 1000)));
+    } else {
+      setCountdown(guestRemainingSeconds ?? null);
+    }
+  }, [guestRemainingSeconds, guestExpiresAt]);
+
+  useEffect(() => {
+    if (guestExpiresAt) {
+      const updateTimer = () => {
+        const rem = Math.max(0, Math.floor((guestExpiresAt - Date.now()) / 1000));
+        setCountdown(rem);
+        if (rem <= 0) {
+          onPasscodeExpired?.();
+        }
+      };
+      updateTimer();
+      const timer = setInterval(updateTimer, 1000);
+      return () => clearInterval(timer);
+    }
+
+    if (countdown === null || countdown <= 0) return;
+    const timer = setInterval(() => {
+      setCountdown(prev => {
+        if (prev && prev > 1) return prev - 1;
+        onPasscodeExpired?.();
+        return 0;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [guestExpiresAt, countdown, onPasscodeExpired]);
+
+  const formatCountdown = (totalSeconds: number) => {
+    if (totalSeconds <= 0) return "Expired";
+    const hours = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    if (hours > 0) return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  };
   return (
     <header className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-800/60 bg-slate-900/40 backdrop-blur-md z-10">
       <div className="flex items-center gap-1.5 sm:gap-3">
@@ -87,6 +145,44 @@ export const SessionHeader = memo(({
         </div>
 
         <div className="h-4 w-px bg-slate-700" />
+
+        {isPro && isMasterAdmin && setShowShareAdminModal && (
+          <>
+            <button
+              onClick={() => setShowShareAdminModal(true)}
+              className={`p-2 rounded-md transition-all flex items-center justify-center border shadow-md ${
+                activePasscodesCount && activePasscodesCount > 0
+                  ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-emerald-500/10'
+                  : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/20 shadow-blue-500/5'
+              }`}
+              title={
+                activePasscodesCount && activePasscodesCount > 0
+                  ? `${activePasscodesCount} Active Share Passcode(s)`
+                  : "Share Expiring Passcode"
+              }
+              aria-label="Manage Expiring Passcodes"
+            >
+              <KeyRound className="w-4 h-4" />
+              {activePasscodesCount !== undefined && activePasscodesCount > 0 && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-1" />
+              )}
+            </button>
+            <div className="h-4 w-px bg-slate-700" />
+          </>
+        )}
+
+        {!isMasterAdmin && countdown !== null && countdown > 0 && (
+          <>
+            <div 
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-mono font-bold text-xs bg-amber-500/10 border border-amber-500/20 text-amber-400 shadow-sm"
+              title="Guest session remaining time"
+            >
+              <Clock className="w-3.5 h-3.5 animate-pulse" />
+              <span>{formatCountdown(countdown)}</span>
+            </div>
+            <div className="h-4 w-px bg-slate-700" />
+          </>
+        )}
 
         <button 
           id="tour-share"

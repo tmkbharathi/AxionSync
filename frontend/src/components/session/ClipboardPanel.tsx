@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Socket } from "socket.io-client";
-import { Mic, MicOff, Minus, Plus, CheckCircle, Copy } from "lucide-react";
+import { Mic, MicOff, Minus, Plus, CheckCircle, Copy, Lock } from "lucide-react";
 import { siteConfig } from "@/config/site";
 
 export const ClipboardPanel = memo(({ 
@@ -11,14 +11,16 @@ export const ClipboardPanel = memo(({
   connected, 
   initialText,
   activeTab,
-  isFilePanelCollapsed
+  isFilePanelCollapsed,
+  permissions
 }: { 
   sessionId: string, 
   socket: Socket | null, 
   connected: boolean,
   initialText: string,
   activeTab: string,
-  isFilePanelCollapsed: boolean
+  isFilePanelCollapsed: boolean,
+  permissions?: { allowText?: boolean; allowFiles?: boolean; allowUploads?: boolean }
 }) => {
   const [text, setText] = useState(initialText);
   const [fontSize, setFontSize] = useState(14);
@@ -51,10 +53,10 @@ export const ClipboardPanel = memo(({
     return () => { socket.off("text_updated", handleUpdate); };
   }, [socket, sessionId]);
 
-  // Debounced Sync Effect
+  // Debounced auto-save & Socket broadcast
   useEffect(() => {
-    if (!isLocalChange.current) return;
-
+    if (!isLocalChange.current || permissions?.allowUploads === false) return;
+    
     const timer = setTimeout(() => {
       if (socket && connected) {
         socket.emit("update_text", { sessionId, content: text });
@@ -64,7 +66,7 @@ export const ClipboardPanel = memo(({
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [text, socket, connected, sessionId]);
+  }, [text, socket, connected, sessionId, permissions]);
 
   // Setup Speech Recognition
   useEffect(() => {
@@ -98,13 +100,15 @@ export const ClipboardPanel = memo(({
   }, []);
 
   const handleTextChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (permissions?.allowUploads === false) return;
     const newText = e.target.value;
     isLocalChange.current = true;
     setText(newText);
     textRef.current = newText;
-  }, []);
+  }, [permissions]);
 
   const toggleListening = useCallback(() => {
+    if (permissions?.allowUploads === false) return;
     if(isListening) {
         recognitionRef.current?.stop();
         setIsListening(false);
@@ -116,7 +120,7 @@ export const ClipboardPanel = memo(({
         recognitionRef.current.start();
         setIsListening(true);
     }
-  }, [isListening]);
+  }, [isListening, permissions]);
 
   const handleCopyText = useCallback(() => {
     navigator.clipboard.writeText(text);
@@ -124,39 +128,65 @@ export const ClipboardPanel = memo(({
     setTimeout(() => setCopiedText(false), 2000);
   }, [text]);
 
+  const isReadOnly = permissions?.allowUploads === false;
+  const isTextHidden = permissions?.allowText === false;
+
   return (
     <div className={`h-full flex flex-col items-stretch p-4 md:p-6 transition-all duration-300 ease-in-out ${activeTab === 'text' ? 'block' : 'hidden md:flex'} ${isFilePanelCollapsed ? 'w-full' : 'w-full md:w-3/5 lg:w-2/3'}`}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold text-slate-200">Clipboard</h2>
-          <button 
-            id="tour-mic"
-            onClick={toggleListening}
-            className={`p-1.5 rounded text-white transition-colors border ${isListening ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'}`}
-          >
-            {isListening ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
-          </button>
-          <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5">
-            <button onClick={() => setFontSize(p => Math.max(10, p - 2))} className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"><Minus className="w-3.5 h-3.5" /></button>
-            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
-            <button onClick={() => setFontSize(p => Math.min(48, p + 2))} className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"><Plus className="w-3.5 h-3.5" /></button>
-          </div>
+          {isReadOnly && (
+            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+              <Lock className="w-3 h-3" /> Read-Only
+            </span>
+          )}
+          {!isReadOnly && !isTextHidden && (
+            <button 
+              id="tour-mic"
+              onClick={toggleListening}
+              className={`p-1.5 rounded text-white transition-colors border ${isListening ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'}`}
+            >
+              {isListening ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+            </button>
+          )}
+          {!isTextHidden && (
+            <div className="flex items-center bg-slate-800 rounded border border-slate-700 p-0.5">
+              <button onClick={() => setFontSize(p => Math.max(10, p - 2))} className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"><Minus className="w-3.5 h-3.5" /></button>
+              <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+              <button onClick={() => setFontSize(p => Math.min(48, p + 2))} className="p-1 hover:bg-slate-700 rounded-sm transition-colors text-slate-400 hover:text-white"><Plus className="w-3.5 h-3.5" /></button>
+            </div>
+          )}
         </div>
-        <button onClick={handleCopyText} className="p-1.5 sm:px-3 sm:py-1.5 text-xs font-medium rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-700">
-          {copiedText ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          <span className="hidden sm:inline">{copiedText ? 'Copied!' : 'Copy All'}</span>
-        </button>
+        {!isTextHidden && (
+          <button onClick={handleCopyText} className="p-1.5 sm:px-3 sm:py-1.5 text-xs font-medium rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-700">
+            {copiedText ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">{copiedText ? 'Copied!' : 'Copy All'}</span>
+          </button>
+        )}
       </div>
-      <div id="tour-clipboard" className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all shadow-inner">
-        <textarea
-          id="main-content"
-          value={text}
-          onChange={handleTextChange}
-          placeholder="Type or paste text here... It will sync instantly."
-          style={{ scrollbarGutter: 'stable', fontSize: `${fontSize}px` }}
-          className="w-full h-full p-3 bg-transparent resize-none outline-none text-slate-200 placeholder:text-slate-600 font-mono leading-relaxed"
-        />
-      </div>
+
+      {isTextHidden ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-900/30 border border-slate-800/60 rounded-xl">
+          <Lock className="w-10 h-10 mb-3 text-amber-400/80 animate-pulse" />
+          <h3 className="text-base font-bold text-slate-300">Text Clipboard Hidden</h3>
+          <p className="text-xs text-slate-500 max-w-xs mt-1">
+            The room administrator has restricted clipboard text access for this guest passcode.
+          </p>
+        </div>
+      ) : (
+        <div id="tour-clipboard" className="flex-1 relative mb-4 rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 backdrop-blur-sm group focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all shadow-inner">
+          <textarea
+            id="main-content"
+            value={text}
+            onChange={handleTextChange}
+            readOnly={isReadOnly}
+            placeholder={isReadOnly ? "Read-only mode (Editing disabled by admin)" : "Type or paste text here... It will sync instantly."}
+            style={{ scrollbarGutter: 'stable', fontSize: `${fontSize}px` }}
+            className={`w-full h-full p-3 bg-transparent resize-none outline-none font-mono leading-relaxed ${isReadOnly ? 'text-slate-400 cursor-not-allowed' : 'text-slate-200 placeholder:text-slate-600'}`}
+          />
+        </div>
+      )}
     </div>
   );
 });

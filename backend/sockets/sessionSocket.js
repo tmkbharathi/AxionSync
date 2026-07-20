@@ -9,8 +9,16 @@ function registerSessionHandlers(io, socket) {
     // Security validation: Require token for joining the admin session WebSocket
     if (isAdminSession) {
       try {
-        const storedToken = await redis.get(`session:${sessionId}:token`);
-        if (!token || token !== storedToken) {
+        let isValid = false;
+        if (token) {
+          const storedToken = await redis.get(`session:${sessionId}:token`);
+          if (storedToken && storedToken === token) {
+            isValid = true;
+          } else {
+            isValid = await redis.exists(`session:${sessionId}:token:${token}`);
+          }
+        }
+        if (!isValid) {
           socket.emit("unauthorized", { message: "Invalid session token. Passcode required." });
           socket.disconnect();
           return;
@@ -24,6 +32,7 @@ function registerSessionHandlers(io, socket) {
 
     socket.join(sessionId);
     socket.sessionId = sessionId;
+    socket.token = token;
     socket.persistentDeviceId = persistentDeviceId;
     socket.deviceInfo = deviceInfo || { name: "Unknown Device", platform: "unknown", browser: "unknown" };
 
@@ -63,13 +72,27 @@ function registerSessionHandlers(io, socket) {
   });
 
   socket.on("update_text", async ({ sessionId, content }) => {
+    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
+    if (isAdminSession && socket.token) {
+      try {
+        const val = await redis.get(`session:${sessionId}:token:${socket.token}`);
+        if (val) {
+          const parsed = JSON.parse(val);
+          if (parsed.permissions) {
+            if (parsed.permissions.allowText === false || parsed.permissions.allowUploads === false) {
+              return socket.emit("permission_error", { message: "Text editing is disabled for this guest passcode." });
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
     const normalized = content.replace(/\r\n/g, "\n");
 
     const textKey = `session:${sessionId}:text`;
     const activeKey = `session:${sessionId}:active`;
     const lastActiveKey = `session:${sessionId}:last_active`;
-
-    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
     
     const activeExpiry = isAdminSession ? 86400 * 365 : 86400;      // 1 year or 24 hours
     const metadataExpiry = isAdminSession ? 86400 * 365 : 86400 * 2; // 1 year or 48 hours
@@ -86,6 +109,22 @@ function registerSessionHandlers(io, socket) {
   });
 
   socket.on("delete_file", async ({ sessionId, file }) => {
+    const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+
+    if (isAdminSession && socket.token) {
+      try {
+        const val = await redis.get(`session:${sessionId}:token:${socket.token}`);
+        if (val) {
+          const parsed = JSON.parse(val);
+          if (parsed.permissions) {
+            if (parsed.permissions.allowFiles === false || parsed.permissions.allowUploads === false) {
+              return socket.emit("permission_error", { message: "File operations are disabled for this guest passcode." });
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
     try {
       const { client, bucket } = getStorageClientAndBucket(sessionId);
       await client.send(new DeleteObjectCommand({

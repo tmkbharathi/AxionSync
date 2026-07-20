@@ -538,6 +538,7 @@ function Home() {
                   if (res.data.success && res.data.token) {
                     setIsVerified(true);
                     sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
+                    sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, res.data.isMasterAdmin ? "true" : "false");
                     setTimeout(() => {
                       router.push(`/${ADMIN_SESSION_ID}`);
                       setShowAdminModal(false);

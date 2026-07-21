@@ -498,29 +498,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     return null;
   }
 
-  if (isValidating && isAdminUnlocked) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="flex flex-col items-center gap-6"
-        >
-          <div className="relative">
-            <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Smartphone className="w-6 h-6 text-blue-400" />
-            </div>
-          </div>
-          <div className="text-center">
-            <h2 className="text-xl font-bold mb-2">Securing Connection</h2>
-            <p className="text-slate-400 text-sm">Verifying AxionSync instance...</p>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
   // Admin Unlock Overlay
   if (!isAdminUnlocked) {
     return (
@@ -607,6 +584,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
             
             <form onSubmit={async (e) => {
               e.preventDefault();
+              if (isVerified) return;
               try {
                 const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, {
                   password: adminPasswordValue
@@ -626,7 +604,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                   setTimeout(() => {
                     setIsAdminUnlocked(true);
                     setIsVerified(false);
-                  }, 800);
+                  }, 300);
                 } else {
                   setAdminAuthError(true);
                   setTimeout(() => setAdminAuthError(false), 2000);
@@ -644,15 +622,40 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                 autoFocus
                 placeholder="Enter Password"
                 value={adminPasswordValue}
-                onChange={(e) => setAdminPasswordValue(e.target.value)}
-                className={`w-full py-4 px-4 bg-slate-900/50 border-2 ${adminAuthError ? 'border-rose-500/50' : 'border-slate-800 focus:border-blue-500/50'} rounded-2xl text-center outline-none transition-all placeholder:text-slate-700 mb-6 font-mono tracking-widest`}
+                onChange={async (e) => {
+                  const val = e.target.value;
+                  setAdminPasswordValue(val);
+                  if (val.trim()) {
+                    try {
+                      const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, { password: val });
+                      if (res.data.success && res.data.token) {
+                        const isMaster = res.data.isMasterAdmin === true;
+                        setIsVerified(true);
+                        sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
+                        sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, isMaster ? "true" : "false");
+                        setIsMasterAdmin(isMaster);
+                        if (res.data.remainingSeconds) setGuestRemainingSeconds(res.data.remainingSeconds);
+                        if (res.data.expiresAt) setGuestExpiresAt(res.data.expiresAt);
+                        setTimeout(() => {
+                          setIsAdminUnlocked(true);
+                          setIsVerified(false);
+                        }, 300);
+                      }
+                    } catch (err) {
+                      // Silent check while typing
+                    }
+                  } else {
+                    setIsVerified(false);
+                  }
+                }}
+                className={`w-full py-4 px-4 bg-slate-900/50 border-2 ${adminAuthError ? 'border-rose-500/50' : isVerified ? 'border-emerald-500/50' : 'border-slate-800 focus:border-blue-500/50'} rounded-2xl text-center outline-none transition-all placeholder:text-slate-700 mb-6 font-mono tracking-widest`}
               />
               
               <button
                 type="submit"
-                className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-500/20 active:scale-95"
+                className={`w-full py-4 ${isVerified ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-500/20 active:scale-95`}
               >
-                Verify Identity
+                {isVerified ? "Identity Verified!" : "Verify Identity"}
               </button>
               <button
                 type="button"
@@ -698,6 +701,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden relative selection:bg-blue-500/30">
+      {isValidating && (
+        <div className="fixed top-0 left-0 right-0 z-[100] h-0.5 bg-blue-900/50 overflow-hidden pointer-events-none">
+          <div className="h-full bg-blue-500 animate-pulse w-full" />
+        </div>
+      )}
       
       {/* Floating Performance Settings */}
       <PerformanceSettings />

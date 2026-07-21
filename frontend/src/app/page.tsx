@@ -531,6 +531,7 @@ function Home() {
 
               <form onSubmit={async (e) => {
                 e.preventDefault();
+                if (isVerified) return;
                 try {
                   const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, {
                     password: adminPassword
@@ -543,7 +544,7 @@ function Home() {
                       router.push(`/${ADMIN_SESSION_ID}`);
                       setShowAdminModal(false);
                       setIsVerified(false);
-                    }, 800);
+                    }, 300);
                   } else {
                     setAdminError(true);
                     setTimeout(() => setAdminError(false), 2000);
@@ -559,8 +560,30 @@ function Home() {
                     autoFocus
                     placeholder="Enter Password"
                     value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    className={`w-full py-3 px-12 bg-slate-800 border-2 ${adminError ? 'border-rose-500/50' : 'border-slate-700 focus:border-blue-500/50'} rounded-xl text-center outline-none transition-all placeholder:text-slate-600`}
+                    onChange={async (e) => {
+                      const val = e.target.value;
+                      setAdminPassword(val);
+                      if (val.trim()) {
+                        try {
+                          const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, { password: val });
+                          if (res.data.success && res.data.token) {
+                            setIsVerified(true);
+                            sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
+                            sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, res.data.isMasterAdmin ? "true" : "false");
+                            setTimeout(() => {
+                              router.push(`/${ADMIN_SESSION_ID}`);
+                              setShowAdminModal(false);
+                              setIsVerified(false);
+                            }, 300);
+                          }
+                        } catch (err) {
+                          // Silent check while typing
+                        }
+                      } else {
+                        setIsVerified(false);
+                      }
+                    }}
+                    className={`w-full py-3 px-12 bg-slate-800 border-2 ${adminError ? 'border-rose-500/50' : isVerified ? 'border-emerald-500/50' : 'border-slate-700 focus:border-blue-500/50'} rounded-xl text-center outline-none transition-all placeholder:text-slate-600`}
                   />
                   <button
                     type="button"
@@ -574,9 +597,9 @@ function Home() {
                 <div className="flex flex-col gap-3">
                   <button
                     type="submit"
-                    className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20"
+                    className={`w-full py-3 ${isVerified ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20`}
                   >
-                    Unlock Session
+                    {isVerified ? "Unlocked!" : "Unlock Session"}
                   </button>
                 </div>
               </form>

@@ -170,18 +170,22 @@ async function getSession(req, res) {
     }
 
     const filesRaw = await redis.lrange(filesKey, 0, -1);
+    let storageContext = null;
     const files = filesCount > 0 
       ? await Promise.all(
         filesRaw.map(async (f) => {
           const file = JSON.parse(f);
-          if (file.mimeType && file.mimeType.startsWith("image/")) {
+          // Fast-path: Only generate presigned previewUrl if missing
+          if (!file.previewUrl && file.mimeType && file.mimeType.startsWith("image/")) {
             try {
-              const { client, bucket } = getStorageClientAndBucket(sessionId);
+              if (!storageContext) {
+                storageContext = getStorageClientAndBucket(sessionId);
+              }
               const command = new GetObjectCommand({
-                Bucket: bucket,
+                Bucket: storageContext.bucket,
                 Key: file.s3Key,
               });
-              file.previewUrl = await getSignedUrl(client, command, { expiresIn: 3600 });
+              file.previewUrl = await getSignedUrl(storageContext.client, command, { expiresIn: 86400 });
             } catch (err) {
               console.error("Preview URL generation failed", err);
             }

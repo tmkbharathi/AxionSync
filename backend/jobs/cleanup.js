@@ -1,4 +1,4 @@
-const { DeleteObjectCommand, ListObjectsV2Command } = require("@aws-sdk/client-s3");
+const { DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } = require("@aws-sdk/client-s3");
 const { redis, ALL_SESSIONS_KEY } = require("../config/redis");
 const { 
   s3, 
@@ -37,31 +37,37 @@ const cleanupAdminSession = async (client, bucket, isR2 = false) => {
       }
     }
 
-    for (const keyObj of keysToDelete) {
-      await client.send(new DeleteObjectCommand({
-        Bucket: bucket,
-        Key: keyObj.Key
-      })).catch(err => console.error(`[CLEANUP] Failed to delete admin file ${keyObj.Key}:`, err));
-      
-      // Also remove from Redis list if it's stored there
+    if (keysToDelete.length > 0) {
+      // Batch delete up to 1000 items at a time
+      for (let i = 0; i < keysToDelete.length; i += 1000) {
+        const batch = keysToDelete.slice(i, i + 1000);
+        try {
+          await client.send(new DeleteObjectsCommand({
+            Bucket: bucket,
+            Delete: { Objects: batch }
+          }));
+          console.log(`[CLEANUP] Auto-cleaned ${batch.length} stale admin object(s) from ${isR2 ? "R2" : "Supabase S3"}`);
+        } catch (err) {
+          console.error(`[CLEANUP] Batch delete failed in admin cleanup:`, err);
+        }
+      }
+
+      // Remove deleted keys from Redis
       try {
         const filesKey = `session:${adminSessionId}:files`;
         const filesRaw = await redis.lrange(filesKey, 0, -1);
-        const fileStr = filesRaw.find(f => {
+        const deletedSet = new Set(keysToDelete.map(k => k.Key));
+        for (const f of filesRaw) {
           try {
-            return JSON.parse(f).s3Key === keyObj.Key;
-          } catch {
-            return false;
-          }
-        });
-        if (fileStr) {
-          await redis.lrem(filesKey, 1, fileStr);
+            const parsed = JSON.parse(f);
+            if (deletedSet.has(parsed.s3Key)) {
+              await redis.lrem(filesKey, 1, f);
+            }
+          } catch {}
         }
       } catch (err) {
-        console.error(`[CLEANUP] Failed to remove admin file from Redis:`, err);
+        console.error(`[CLEANUP] Failed to remove admin files from Redis:`, err);
       }
-      
-      console.log(`[CLEANUP] Auto-cleaned stale admin object from ${isR2 ? "R2" : "Supabase S3"}: ${keyObj.Key}`);
     }
 
     isTruncated = response.IsTruncated || false;
@@ -120,15 +126,19 @@ const runHourlyCleanup = async (io) => {
           try { return JSON.parse(f); } catch { return null; }
         }).filter(Boolean);
 
-        const { client, bucket } = getStorageClientAndBucket(sessionId);
-        
-        // Delete objects from S3/R2
-        await Promise.all(files.map(file => 
-          client.send(new DeleteObjectCommand({
-            Bucket: bucket,
-            Key: file.s3Key
-          })).catch(err => console.error(`[CLEANUP] Failed to delete ${file.s3Key} from S3 during session purge:`, err))
-        ));
+        if (files.length > 0) {
+          const { client, bucket } = getStorageClientAndBucket(sessionId);
+          const objectsToDelete = files.map(f => ({ Key: f.s3Key }));
+          
+          try {
+            await client.send(new DeleteObjectsCommand({
+              Bucket: bucket,
+              Delete: { Objects: objectsToDelete }
+            }));
+          } catch (err) {
+            console.error(`[CLEANUP] Batch delete failed for session ${sessionId}:`, err);
+          }
+        }
 
         // Delete Redis keys
         cleanupPipeline.del(

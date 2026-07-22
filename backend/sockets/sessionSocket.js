@@ -35,6 +35,20 @@ function registerSessionHandlers(io, socket) {
     socket.token = token;
     socket.persistentDeviceId = persistentDeviceId;
     socket.deviceInfo = deviceInfo || { name: "Unknown Device", platform: "unknown", browser: "unknown" };
+    socket.permissions = { allowText: true, allowFiles: true, allowUploads: true };
+
+    // Fetch and cache permissions for guest tokens
+    if (isAdminSession && token) {
+      try {
+        const val = await redis.get(`session:${sessionId}:token:${token}`);
+        if (val) {
+          const parsed = JSON.parse(val);
+          if (parsed.permissions) {
+            socket.permissions = parsed.permissions;
+          }
+        }
+      } catch (e) {}
+    }
 
     // Refresh overall session expiry on join
     try {
@@ -74,18 +88,10 @@ function registerSessionHandlers(io, socket) {
   socket.on("update_text", async ({ sessionId, content }) => {
     const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
-    if (isAdminSession && socket.token) {
-      try {
-        const val = await redis.get(`session:${sessionId}:token:${socket.token}`);
-        if (val) {
-          const parsed = JSON.parse(val);
-          if (parsed.permissions) {
-            if (parsed.permissions.allowText === false || parsed.permissions.allowUploads === false) {
-              return socket.emit("permission_error", { message: "Text editing is disabled for this guest passcode." });
-            }
-          }
-        }
-      } catch (e) {}
+    if (isAdminSession && socket.permissions) {
+      if (socket.permissions.allowText === false || socket.permissions.allowUploads === false) {
+        return socket.emit("permission_error", { message: "Text editing is disabled for this guest passcode." });
+      }
     }
 
     const normalized = content.replace(/\r\n/g, "\n");
@@ -111,18 +117,10 @@ function registerSessionHandlers(io, socket) {
   socket.on("delete_file", async ({ sessionId, file }) => {
     const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
-    if (isAdminSession && socket.token) {
-      try {
-        const val = await redis.get(`session:${sessionId}:token:${socket.token}`);
-        if (val) {
-          const parsed = JSON.parse(val);
-          if (parsed.permissions) {
-            if (parsed.permissions.allowFiles === false || parsed.permissions.allowUploads === false) {
-              return socket.emit("permission_error", { message: "File operations are disabled for this guest passcode." });
-            }
-          }
-        }
-      } catch (e) {}
+    if (isAdminSession && socket.permissions) {
+      if (socket.permissions.allowFiles === false || socket.permissions.allowUploads === false) {
+        return socket.emit("permission_error", { message: "File operations are disabled for this guest passcode." });
+      }
     }
 
     try {

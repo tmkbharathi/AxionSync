@@ -37,10 +37,39 @@ const QRCodeSVG = dynamic(() => import("qrcode.react").then(mod => mod.QRCodeSVG
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-// Calculate SHA-256 hash of a file using Web Crypto API
+// Calculate SHA-256 hash of a file using Web Crypto API with chunked memory optimization
 const calculateSHA256 = async (file: File): Promise<string> => {
-  const arrayBuffer = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
+  const MAX_RAM_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit for single-buffer digest
+  if (file.size <= MAX_RAM_FILE_SIZE) {
+    const arrayBuffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // Fast chunked sampling digest for large files (> 50MB) to prevent browser memory exhaustion
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+  const headChunk = file.slice(0, CHUNK_SIZE);
+  const midStart = Math.floor(file.size / 2);
+  const midChunk = file.slice(midStart, midStart + CHUNK_SIZE);
+  const tailChunk = file.slice(Math.max(0, file.size - CHUNK_SIZE));
+
+  const [headBuffer, midBuffer, tailBuffer] = await Promise.all([
+    headChunk.arrayBuffer(),
+    midChunk.arrayBuffer(),
+    tailChunk.arrayBuffer()
+  ]);
+
+  const metaString = `${file.name}:${file.size}:${file.lastModified}`;
+  const metaBuffer = new TextEncoder().encode(metaString);
+
+  const combined = new Uint8Array(headBuffer.byteLength + midBuffer.byteLength + tailBuffer.byteLength + metaBuffer.byteLength);
+  combined.set(new Uint8Array(headBuffer), 0);
+  combined.set(new Uint8Array(midBuffer), headBuffer.byteLength);
+  combined.set(new Uint8Array(tailBuffer), headBuffer.byteLength + midBuffer.byteLength);
+  combined.set(metaBuffer, headBuffer.byteLength + midBuffer.byteLength + tailBuffer.byteLength);
+
+  const hashBuffer = await crypto.subtle.digest("SHA-256", combined);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 };

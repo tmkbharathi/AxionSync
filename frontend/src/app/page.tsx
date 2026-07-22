@@ -164,7 +164,7 @@ function Home() {
 
       {/* Top Navigation & Help Buttons */}
       {/* GitHub Link */}
-      <div className="fixed top-6 right-8 z-50">
+      <div className="fixed top-3 right-3 sm:top-6 sm:right-6 z-50">
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 0.6, x: 0 }}
@@ -174,7 +174,8 @@ function Home() {
             href={siteConfig.links.github}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all border border-slate-800 hover:border-slate-700 bg-slate-900/40 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl group"
+            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all border border-slate-800 hover:border-slate-700 bg-slate-900/60 backdrop-blur-md px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-xl group"
+            title="GitHub Repository"
           >
             <svg
               viewBox="0 0 24 24"
@@ -189,7 +190,7 @@ function Home() {
       </div>
 
       {/* Take a Tour Trigger */}
-      <div className="fixed top-6 left-6 sm:left-auto sm:right-8 sm:top-[70px] z-50">
+      <div className="fixed top-3 left-3 sm:left-auto sm:right-6 sm:top-[70px] z-50">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 0.6, x: 0 }}
@@ -198,7 +199,8 @@ function Home() {
         >
           <button
             onClick={() => setIsTourActive(true)}
-            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-blue-400 transition-all border border-slate-800 hover:border-blue-500/30 bg-slate-900/40 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl group cursor-none font-sans"
+            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-blue-400 transition-all border border-slate-800 hover:border-blue-500/30 bg-slate-900/60 backdrop-blur-md px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-xl group cursor-pointer font-sans"
+            title="Take a Tour"
           >
             <Sparkles className="w-4 h-4 text-slate-500 group-hover:text-blue-400 transition-colors" />
             <span className="hidden sm:inline">Take a Tour</span>
@@ -212,7 +214,7 @@ function Home() {
       {/* Floating Performance Settings */}
       <PerformanceSettings />
 
-      <div className="relative z-10 w-full max-w-5xl px-6 py-6 lg:px-8 flex flex-col items-center">
+      <div className="relative z-10 w-full max-w-5xl px-3 sm:px-6 py-4 sm:py-6 lg:px-8 flex flex-col items-center">
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -220,7 +222,7 @@ function Home() {
           transition={{ duration: 0.8, ease: "easeOut" }}
           className="text-center w-full max-w-md"
         >
-          <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-[11px] font-bold uppercase tracking-widest text-cyan-400">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-[11px] font-bold uppercase tracking-widest text-cyan-400">
             <Zap className="w-3 h-3 fill-cyan-400" />
             Real-Time Sync • <span className="text-cyan-300/80">Beta v{siteConfig.version}</span>
           </div>

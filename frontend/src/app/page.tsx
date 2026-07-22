@@ -60,6 +60,7 @@ function Home() {
   const [adminError, setAdminError] = useState(false);
   const [adminErrorMessage, setAdminErrorMessage] = useState<string | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
+  const [showE2eeDetails, setShowE2eeDetails] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [isProHovered, setIsProHovered] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -231,68 +232,6 @@ function Home() {
 
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-normal mb-4 pb-2 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 relative inline-block">
             {siteConfig.name}
-
-            {/* Tiny Pro Logo at Title End */}
-            <div
-              className="absolute -right-10 bottom-2 md:-right-12 md:bottom-2.5 cursor-help group/pro"
-              onMouseEnter={() => setIsProHovered(true)}
-              onMouseLeave={() => setIsProHovered(false)}
-            >
-              <motion.div
-                whileHover={{ scale: 1.1, rotate: 10 }}
-                className="p-1 rounded-md bg-gradient-to-br from-blue-500/20 to-indigo-500/20 border border-blue-500/30 backdrop-blur-sm shadow-lg shadow-blue-500/10"
-              >
-                <Crown className="w-3.5 h-3.5 md:w-4 md:h-4 text-blue-400 fill-blue-400/20" />
-              </motion.div>
-
-              <AnimatePresence>
-                {isProHovered && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                    className="absolute top-full right-0 md:left-1/2 md:-translate-x-1/2 mt-3 w-[240px] bg-slate-900/98 backdrop-blur-3xl border border-blue-500/30 p-1 rounded-3xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)] z-50 pointer-events-none origin-top-right md:origin-top overflow-hidden"
-                  >
-                    {/* Compact Inner Content */}
-                    <div className="relative p-4 rounded-[1.4rem] bg-gradient-to-br from-slate-900 to-blue-900/10">
-                      <div className="relative z-10">
-                        {/* Elite Header */}
-                        <div className="flex items-center gap-2 mb-4">
-                          <div className="p-1 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                            <Crown className="w-3 h-3 text-blue-400" />
-                          </div>
-                          <h3 className="text-sm font-black text-white tracking-normal uppercase">ProUser Sessions</h3>
-                        </div>
-
-                        {/* Ultra-Compact Feature List */}
-                        <div className="space-y-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-                            <p className="text-[11px] text-slate-300 font-medium tracking-normal leading-none">Permanent <span className="text-blue-400 font-bold">8-char</span> keys</p>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
-                            <p className="text-[11px] text-slate-300 font-medium tracking-normal leading-none">Cloud sync & file vault</p>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 shrink-0 shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
-                            <p className="text-[11px] text-slate-300 font-medium tracking-normal leading-none">End-to-end encryption</p>
-                          </div>
-                        </div>
-
-                        {/* Minimal Footer */}
-                        <div className="mt-4 pt-3 border-t border-slate-800/80 flex justify-between items-center">
-                          <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Phase 2</span>
-                          <span className="text-[8px] font-black text-blue-500/80 uppercase tracking-widest">Coming Soon...</span>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
           </h1>
           <p className="mt-4 text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed">
             Instantly sync your clipboard text and share files securely across all your devices.
@@ -403,11 +342,13 @@ function Home() {
             icon={<Copy className="w-6 h-6 text-cyan-400" />}
             title="Real-time Clipboard"
             desc="Copy on one device, paste on any other—instantly and in real-time."
+            badge={<E2eeToggleBadge />}
           />
           <FeatureCard
             icon={<Cloud className="w-6 h-6 text-blue-400" />}
             title="Cloud File Storage"
             desc="Upload files up to 50MB and access them from any device."
+            badge={<E2eeToggleBadge />}
           />
           <FeatureCard
             icon={<Shield className="w-6 h-6 text-indigo-400" />}
@@ -710,9 +651,43 @@ export default function HomePage() {
   );
 }
 
-const FeatureCard = memo(function FeatureCard({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) {
+const E2eeToggleBadge = memo(function E2eeToggleBadge() {
+  const [expanded, setExpanded] = useState(false);
   return (
-    <div className="bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl p-6 hover:bg-slate-800/50 transition-colors">
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setExpanded(!expanded);
+      }}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer shadow-lg shadow-emerald-500/5 select-none"
+      title="Click to toggle E2EE encryption status"
+    >
+      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.span
+            initial={{ opacity: 0, width: 0 }}
+            animate={{ opacity: 1, width: "auto" }}
+            exit={{ opacity: 0, width: 0 }}
+            className="overflow-hidden whitespace-nowrap ml-0.5"
+          >
+            AES-256 E2EE
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </button>
+  );
+});
+
+const FeatureCard = memo(function FeatureCard({ icon, title, desc, badge }: { icon: React.ReactNode, title: string, desc: string, badge?: React.ReactNode }) {
+  return (
+    <div className="bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl p-6 hover:bg-slate-800/50 transition-colors relative">
+      {badge && (
+        <div className="absolute top-4 right-4 z-10">
+          {badge}
+        </div>
+      )}
       <div className="bg-slate-800/80 w-12 h-12 rounded-lg flex items-center justify-center mb-4 border border-slate-700">
         {icon}
       </div>

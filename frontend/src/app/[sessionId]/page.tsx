@@ -26,6 +26,7 @@ import { SessionFooter } from "@/components/session/SessionFooter";
 import { ClipboardPanel } from "@/components/session/ClipboardPanel";
 import { FileManagerPanel } from "@/components/session/FileManagerPanel";
 import { ShareAdminModal } from "@/components/session/ShareAdminModal";
+import { encryptFile, decryptFile } from "@/lib/crypto";
 
 // Dynamic imports for heavy components
 const Background3D = dynamic(() => import("@/components/Background3D").then(mod => mod.Background3D), { 
@@ -458,16 +459,17 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
 
     const results = await Promise.allSettled(validFiles.map(async (file, index) => {
       const hash = await calculateSHA256(file);
+      const payloadToUpload = await encryptFile(file, sessionId);
 
       const presignRes = await axios.post(`${API_URL}/session/${sessionId}/upload/presign`, {
         fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type || "application/octet-stream"
+        fileSize: payloadToUpload.size,
+        mimeType: "application/octet-stream"
       }, { headers: getAuthHeaders() });
       const { uploadUrl, fileId, s3Key } = presignRes.data;
 
-      await axios.put(uploadUrl, file, {
-        headers: { "Content-Type": file.type || "application/octet-stream" },
+      await axios.put(uploadUrl, payloadToUpload, {
+        headers: { "Content-Type": "application/octet-stream" },
         onUploadProgress: (p) => { 
           if (p.loaded !== undefined) {
             loadedSizes[index] = p.loaded;
@@ -499,16 +501,29 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     
     setUploading(false);
     setUploadProgress(0);
-  }, [sessionId]);
+  }, [sessionId, getAuthHeaders]);
 
   const handleDownloadFile = useCallback(async (file: FileMeta) => {
     try {
       const res = await axios.get(`${API_URL}/download?s3Key=${encodeURIComponent(file.s3Key)}`, { headers: getAuthHeaders() });
-      window.open(res.data.url, "_blank");
+      const rawRes = await fetch(res.data.url);
+      const rawBlob = await rawRes.blob();
+
+      const decryptedBlob = await decryptFile(rawBlob, sessionId, file.mimeType);
+
+      const blobUrl = URL.createObjectURL(decryptedBlob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
     } catch (err) {
-      alert("Could not generate download link");
+      console.error("Download or decryption error:", err);
+      alert("Could not download or decrypt file");
     }
-  }, [getAuthHeaders]);
+  }, [sessionId, getAuthHeaders]);
 
   const handleDeleteFile = useCallback((file: FileMeta) => {
     if (socket && connected) socket.emit("delete_file", { sessionId, file });

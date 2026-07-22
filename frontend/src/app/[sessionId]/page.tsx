@@ -246,6 +246,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [guestExpiresAt, setGuestExpiresAt] = useState<number | null>(null);
   const [showPasscodeExpiredModal, setShowPasscodeExpiredModal] = useState<boolean>(false);
   const [permissions, setPermissions] = useState<{ allowText?: boolean; allowFiles?: boolean; allowUploads?: boolean }>({ allowText: true, allowFiles: true, allowUploads: true });
+  const [isAutoUnlocking, setIsAutoUnlocking] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.has("passcode");
+  });
 
   useEffect(() => {
     setHasMounted(true);
@@ -254,6 +259,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       const passcodeParam = urlParams?.get("passcode");
 
       if (passcodeParam) {
+        setIsAutoUnlocking(true);
         setAdminPasswordValue(passcodeParam);
         axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, { password: passcodeParam })
           .then(res => {
@@ -272,12 +278,17 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                 setGuestExpiresAt(res.data.expiresAt);
               }
               setIsAdminUnlocked(true);
+            } else {
+              setShowPasscodeExpiredModal(true);
             }
           })
           .catch(err => {
             console.error("Auto unlock with passcode param failed:", err);
             setShowPasscodeExpiredModal(true);
             setIsValidating(false);
+          })
+          .finally(() => {
+            setIsAutoUnlocking(false);
           });
       } else {
         const token = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
@@ -523,8 +534,13 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   }, [sessionId, router]);
 
-  if (!hasMounted) {
-    return null;
+  if (!hasMounted || isAutoUnlocking) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
+        <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-slate-400 text-xs font-mono tracking-widest uppercase animate-pulse">Verifying Access Passcode...</p>
+      </div>
+    );
   }
 
   // Admin Unlock Overlay
@@ -651,31 +667,10 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                 autoFocus
                 placeholder="Enter Password"
                 value={adminPasswordValue}
-                onChange={async (e) => {
-                  const val = e.target.value;
-                  setAdminPasswordValue(val);
-                  if (val.trim()) {
-                    try {
-                      const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, { password: val });
-                      if (res.data.success && res.data.token) {
-                        const isMaster = res.data.isMasterAdmin === true;
-                        setIsVerified(true);
-                        sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
-                        sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, isMaster ? "true" : "false");
-                        setIsMasterAdmin(isMaster);
-                        if (res.data.remainingSeconds) setGuestRemainingSeconds(res.data.remainingSeconds);
-                        if (res.data.expiresAt) setGuestExpiresAt(res.data.expiresAt);
-                        setTimeout(() => {
-                          setIsAdminUnlocked(true);
-                          setIsVerified(false);
-                        }, 300);
-                      }
-                    } catch (err) {
-                      // Silent check while typing
-                    }
-                  } else {
-                    setIsVerified(false);
-                  }
+                onChange={(e) => {
+                  setAdminPasswordValue(e.target.value);
+                  setAdminAuthError(false);
+                  setIsVerified(false);
                 }}
                 className={`w-full py-4 px-4 bg-slate-900/50 border-2 ${adminAuthError ? 'border-rose-500/50' : isVerified ? 'border-emerald-500/50' : 'border-slate-800 focus:border-blue-500/50'} rounded-2xl text-center outline-none transition-all placeholder:text-slate-700 mb-6 font-mono tracking-widest`}
               />

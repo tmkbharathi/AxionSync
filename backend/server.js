@@ -25,7 +25,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 // Rate Limiters
 const unlockLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 15,
+  max: 150,
   message: { error: "Too many passcode unlock attempts. Please try again after 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,

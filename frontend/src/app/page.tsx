@@ -546,11 +546,7 @@ function Home() {
                     setAdminErrorMessage(null);
                     sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
                     sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, res.data.isMasterAdmin ? "true" : "false");
-                    setTimeout(() => {
-                      router.push(`/${ADMIN_SESSION_ID}`);
-                      setShowAdminModal(false);
-                      setIsVerified(false);
-                    }, 200);
+                    window.location.href = `/${ADMIN_SESSION_ID}`;
                   } else {
                     setAdminError(true);
                     setTimeout(() => setAdminError(false), 2000);

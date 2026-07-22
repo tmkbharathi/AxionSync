@@ -355,7 +355,9 @@ async function presignUpload(req, res) {
       return res.status(400).json({ error: `Session total storage limit (${isAdminSession ? "1GB" : "50MB"}) reached. Please delete old files.` });
     }
 
-    const fileId = `${Date.now()}-${fileName}`;
+    // Sanitize filename for S3 object key to prevent breakages with special chars (#, ?, emojis, spaces)
+    const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const fileId = `${Date.now()}-${safeFileName}`;
     const s3Key = `${sessionId}/${fileId}`;
 
     const { client, bucket } = getStorageClientAndBucket(sessionId);
@@ -363,7 +365,6 @@ async function presignUpload(req, res) {
     const command = new PutObjectCommand({
       Bucket: bucket,
       Key: s3Key,
-      ContentType: mimeType,
     });
 
     const uploadUrl = await getSignedUrl(client, command, { expiresIn: 900 });

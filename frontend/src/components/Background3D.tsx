@@ -103,7 +103,11 @@ export const Background3D = memo(function Background3D({ isStatic = false }: { i
           depth: false
         }}
         onCreated={({ gl }) => {
-           gl.setClearColor(0x020617, 1);
+          gl.setClearColor(0x020617, 1);
+          const canvas = gl.domElement;
+          if (canvas) {
+            canvas.addEventListener("webglcontextlost", (e) => e.preventDefault(), false);
+          }
         }}
       >
         <StarBackground isStatic={isStatic} />

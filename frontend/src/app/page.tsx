@@ -59,6 +59,7 @@ function Home() {
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState(false);
   const [adminErrorMessage, setAdminErrorMessage] = useState<string | null>(null);
+  const [isUnlocking, setIsUnlocking] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [isProHovered, setIsProHovered] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -83,6 +84,7 @@ function Home() {
     setShowPassword(false);
     setAdminError(false);
     setAdminErrorMessage(null);
+    setIsUnlocking(false);
   };
 
   useEffect(() => {
@@ -536,8 +538,9 @@ function Home() {
               <form onSubmit={async (e) => {
                 e.preventDefault();
                 const pwd = adminPassword.trim();
-                if (!pwd) return;
+                if (!pwd || isUnlocking) return;
 
+                setIsUnlocking(true);
                 try {
                   const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, {
                     password: pwd
@@ -551,10 +554,12 @@ function Home() {
                     window.location.href = `/${ADMIN_SESSION_ID}`;
                   } else {
                     setAdminError(true);
+                    setIsUnlocking(false);
                     setTimeout(() => setAdminError(false), 2000);
                   }
                 } catch (err: any) {
                   setAdminError(true);
+                  setIsUnlocking(false);
                   if (err.response?.status === 429) {
                     setAdminErrorMessage(err.response?.data?.error || "Too many passcode unlock attempts. Please try again after 15 minutes.");
                   } else {
@@ -595,9 +600,19 @@ function Home() {
                 <div className="flex flex-col gap-3">
                   <button
                     type="submit"
-                    className={`w-full py-3 ${isVerified ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20`}
+                    disabled={isUnlocking}
+                    className={`w-full py-3 ${isVerified ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 disabled:opacity-80`}
                   >
-                    {isVerified ? "Unlocked!" : "Unlock Session"}
+                    {isUnlocking ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Verifying...</span>
+                      </>
+                    ) : isVerified ? (
+                      "Unlocked!"
+                    ) : (
+                      "Unlock Session"
+                    )}
                   </button>
                 </div>
               </form>

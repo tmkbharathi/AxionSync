@@ -58,6 +58,7 @@ function Home() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState(false);
+  const [adminErrorMessage, setAdminErrorMessage] = useState<string | null>(null);
   const [isVerified, setIsVerified] = useState(false);
   const [isProHovered, setIsProHovered] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -81,6 +82,7 @@ function Home() {
     setJoinKey("");
     setShowPassword(false);
     setAdminError(false);
+    setAdminErrorMessage(null);
   };
 
   useEffect(() => {
@@ -531,27 +533,36 @@ function Home() {
 
               <form onSubmit={async (e) => {
                 e.preventDefault();
-                if (isVerified) return;
+                const pwd = adminPassword.trim();
+                if (!pwd) return;
+
                 try {
                   const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, {
-                    password: adminPassword
+                    password: pwd
                   });
                   if (res.data.success && res.data.token) {
                     setIsVerified(true);
+                    setAdminError(false);
+                    setAdminErrorMessage(null);
                     sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
                     sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, res.data.isMasterAdmin ? "true" : "false");
                     setTimeout(() => {
                       router.push(`/${ADMIN_SESSION_ID}`);
                       setShowAdminModal(false);
                       setIsVerified(false);
-                    }, 300);
+                    }, 200);
                   } else {
                     setAdminError(true);
                     setTimeout(() => setAdminError(false), 2000);
                   }
-                } catch (err) {
+                } catch (err: any) {
                   setAdminError(true);
-                  setTimeout(() => setAdminError(false), 2000);
+                  if (err.response?.status === 429) {
+                    setAdminErrorMessage(err.response?.data?.error || "Too many passcode unlock attempts. Please try again after 15 minutes.");
+                  } else {
+                    setAdminErrorMessage("Invalid passcode or expired link.");
+                    setTimeout(() => setAdminError(false), 2000);
+                  }
                 }
               }}>
                 <div className="relative mb-4">
@@ -560,28 +571,11 @@ function Home() {
                     autoFocus
                     placeholder="Enter Password"
                     value={adminPassword}
-                    onChange={async (e) => {
-                      const val = e.target.value;
-                      setAdminPassword(val);
-                      if (val.trim()) {
-                        try {
-                          const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, { password: val });
-                          if (res.data.success && res.data.token) {
-                            setIsVerified(true);
-                            sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
-                            sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, res.data.isMasterAdmin ? "true" : "false");
-                            setTimeout(() => {
-                              router.push(`/${ADMIN_SESSION_ID}`);
-                              setShowAdminModal(false);
-                              setIsVerified(false);
-                            }, 300);
-                          }
-                        } catch (err) {
-                          // Silent check while typing
-                        }
-                      } else {
-                        setIsVerified(false);
-                      }
+                    onChange={(e) => {
+                      setAdminPassword(e.target.value);
+                      setAdminError(false);
+                      setAdminErrorMessage(null);
+                      setIsVerified(false);
                     }}
                     className={`w-full py-3 px-12 bg-slate-800 border-2 ${adminError ? 'border-rose-500/50' : isVerified ? 'border-emerald-500/50' : 'border-slate-700 focus:border-blue-500/50'} rounded-xl text-center outline-none transition-all placeholder:text-slate-600`}
                   />
@@ -593,6 +587,12 @@ function Home() {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+
+                {adminErrorMessage && (
+                  <p className="text-xs text-rose-400 font-medium mb-3 text-center animate-pulse">
+                    {adminErrorMessage}
+                  </p>
+                )}
 
                 <div className="flex flex-col gap-3">
                   <button

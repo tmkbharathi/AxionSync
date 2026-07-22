@@ -468,21 +468,37 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       }, { headers: getAuthHeaders() });
       const { uploadUrl, fileId, s3Key } = presignRes.data;
 
-      await axios.put(uploadUrl, payloadToUpload, {
-        headers: { "Content-Type": "application/octet-stream" },
-        onUploadProgress: (p) => { 
-          if (p.loaded !== undefined) {
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl, true);
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+
+        xhr.upload.onprogress = (p) => {
+          if (p.lengthComputable) {
             loadedSizes[index] = p.loaded;
             const currentTotalLoaded = loadedSizes.reduce((a, b) => a + b, 0);
             setUploadProgress(Math.min(100, Math.round((currentTotalLoaded * 100) / totalSize)));
           }
-        }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            const errorDetail = xhr.responseText || xhr.statusText;
+            console.error(`S3 Upload Error Response (${xhr.status}):`, errorDetail);
+            reject(new Error(`S3 upload failed (${xhr.status}): ${errorDetail}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("Network error during file upload to storage."));
+        xhr.send(payloadToUpload);
       });
 
       return axios.post(`${API_URL}/session/${sessionId}/upload/confirm`, {
         fileId,
         name: file.name,
-        size: file.size,
+        size: payloadToUpload.size,
         mimeType: file.type || "application/octet-stream",
         s3Key,
         hash

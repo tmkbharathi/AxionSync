@@ -5,6 +5,8 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 const cron = require("node-cron");
 
+const rateLimit = require("express-rate-limit");
+
 // Import modular configurations and jobs
 const getSessionRouter = require("./routes/sessionRoutes");
 const registerSessionHandlers = require("./sockets/sessionSocket");
@@ -13,9 +15,37 @@ const { runHourlyCleanup } = require("./jobs/cleanup");
 const app = express();
 const server = http.createServer(app);
 
+// Trust proxy header if running behind reverse proxy (e.g. Render, Vercel, Nginx)
+app.set("trust proxy", 1);
+
 // Environment variables
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+
+// Rate Limiters
+const unlockLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 150,
+  message: { error: "Too many passcode unlock attempts. Please try again after 15 minutes." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const presignLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 60,
+  message: { error: "Upload presign rate limit exceeded. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300,
+  message: { error: "Too many requests from this IP. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 app.use(cors({ 
   origin: FRONTEND_URL, 
@@ -23,6 +53,11 @@ app.use(cors({
   credentials: true 
 }));
 app.use(express.json());
+
+// Apply rate limiting middleware
+app.use("/session/:sessionId/unlock", unlockLimiter);
+app.use("/session/:sessionId/upload/presign", presignLimiter);
+app.use(generalLimiter);
 
 // Global Request Logger
 app.use((req, res, next) => {

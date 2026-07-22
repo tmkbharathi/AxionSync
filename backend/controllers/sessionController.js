@@ -1,4 +1,4 @@
-const { GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } = require("@aws-sdk/client-s3");
+const { GetObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, HeadObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const crypto = require("crypto");
 
@@ -175,8 +175,9 @@ async function getSession(req, res) {
       ? await Promise.all(
         filesRaw.map(async (f) => {
           const file = JSON.parse(f);
-          // Fast-path: Only generate presigned previewUrl if missing
-          if (!file.previewUrl && file.mimeType && file.mimeType.startsWith("image/")) {
+          const isExpiringSoon = file.previewUrlExpiresAt && file.previewUrlExpiresAt < (Date.now() + 600000);
+          // Fast-path: Only generate presigned previewUrl if missing or expiring within 10 minutes
+          if ((!file.previewUrl || isExpiringSoon) && file.mimeType && file.mimeType.startsWith("image/")) {
             try {
               if (!storageContext) {
                 storageContext = getStorageClientAndBucket(sessionId);
@@ -186,6 +187,7 @@ async function getSession(req, res) {
                 Key: file.s3Key,
               });
               file.previewUrl = await getSignedUrl(storageContext.client, command, { expiresIn: 86400 });
+              file.previewUrlExpiresAt = Date.now() + (86400 * 1000);
             } catch (err) {
               console.error("Preview URL generation failed", err);
             }
@@ -278,13 +280,14 @@ async function deleteSession(req, res, io) {
       try { return JSON.parse(f); } catch { return null; }
     }).filter(Boolean);
 
-    const { client, bucket } = getStorageClientAndBucket(sessionId);
-    await Promise.all(files.map(file => 
-      client.send(new DeleteObjectCommand({
+    if (files.length > 0) {
+      const { client, bucket } = getStorageClientAndBucket(sessionId);
+      const objectsToDelete = files.map(file => ({ Key: file.s3Key }));
+      await client.send(new DeleteObjectsCommand({
         Bucket: bucket,
-        Key: file.s3Key
-      })).catch(err => console.error(`Failed to delete file ${file.s3Key} from S3:`, err))
-    ));
+        Delete: { Objects: objectsToDelete }
+      })).catch(err => console.error(`Failed to batch delete files ${sessionId} from S3:`, err));
+    }
 
     await redis.del(activeKey, textKey, filesKey, `session:${sessionId}:last_active`, `session:${sessionId}:purged_empty`, `session:${sessionId}:token`);
     await redis.srem(ALL_SESSIONS_KEY, sessionId);
@@ -464,6 +467,19 @@ async function confirmUpload(req, res, io) {
       hash,
     };
 
+    if (fileMeta.mimeType && fileMeta.mimeType.startsWith("image/")) {
+      try {
+        const command = new GetObjectCommand({
+          Bucket: bucket,
+          Key: fileMeta.s3Key,
+        });
+        fileMeta.previewUrl = await getSignedUrl(client, command, { expiresIn: 86400 });
+        fileMeta.previewUrlExpiresAt = Date.now() + (86400 * 1000);
+      } catch (err) {
+        console.error("Preview URL generation failed on upload", err);
+      }
+    }
+
     const activeExpiry = isAdminSession ? 86400 * 365 : 86400;      // 1 year or 24 hours
     const metadataExpiry = isAdminSession ? 86400 * 365 : 86400 * 2; // 1 year or 48 hours
 
@@ -478,18 +494,6 @@ async function confirmUpload(req, res, io) {
       redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
       redis.sadd(ALL_SESSIONS_KEY, sessionId)
     ]);
-
-    if (fileMeta.mimeType && fileMeta.mimeType.startsWith("image/")) {
-      try {
-        const command = new GetObjectCommand({
-          Bucket: bucket,
-          Key: fileMeta.s3Key,
-        });
-        fileMeta.previewUrl = await getSignedUrl(client, command, { expiresIn: 3600 });
-      } catch (err) {
-        console.error("Preview URL generation failed on upload", err);
-      }
-    }
 
     if (io) {
       io.to(sessionId).emit("file_uploaded", fileMeta);

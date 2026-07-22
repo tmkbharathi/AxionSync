@@ -58,6 +58,9 @@ function Home() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState(false);
+  const [adminErrorMessage, setAdminErrorMessage] = useState<string | null>(null);
+  const [isUnlocking, setIsUnlocking] = useState(false);
+  const [showE2eeDetails, setShowE2eeDetails] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [isProHovered, setIsProHovered] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -81,6 +84,8 @@ function Home() {
     setJoinKey("");
     setShowPassword(false);
     setAdminError(false);
+    setAdminErrorMessage(null);
+    setIsUnlocking(false);
   };
 
   useEffect(() => {
@@ -162,7 +167,7 @@ function Home() {
 
       {/* Top Navigation & Help Buttons */}
       {/* GitHub Link */}
-      <div className="fixed top-6 right-8 z-50">
+      <div className="fixed top-3 right-3 sm:top-6 sm:right-6 z-50">
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 0.6, x: 0 }}
@@ -172,7 +177,8 @@ function Home() {
             href={siteConfig.links.github}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all border border-slate-800 hover:border-slate-700 bg-slate-900/40 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl group"
+            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-white transition-all border border-slate-800 hover:border-slate-700 bg-slate-900/60 backdrop-blur-md px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-xl group"
+            title="GitHub Repository"
           >
             <svg
               viewBox="0 0 24 24"
@@ -187,7 +193,7 @@ function Home() {
       </div>
 
       {/* Take a Tour Trigger */}
-      <div className="fixed top-6 left-6 sm:left-auto sm:right-8 sm:top-[70px] z-50">
+      <div className="fixed top-3 left-3 sm:left-auto sm:right-6 sm:top-[70px] z-50">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 0.6, x: 0 }}
@@ -196,7 +202,8 @@ function Home() {
         >
           <button
             onClick={() => setIsTourActive(true)}
-            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-blue-400 transition-all border border-slate-800 hover:border-blue-500/30 bg-slate-900/40 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl group cursor-none font-sans"
+            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400 hover:text-blue-400 transition-all border border-slate-800 hover:border-blue-500/30 bg-slate-900/60 backdrop-blur-md px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-xl group cursor-pointer font-sans"
+            title="Take a Tour"
           >
             <Sparkles className="w-4 h-4 text-slate-500 group-hover:text-blue-400 transition-colors" />
             <span className="hidden sm:inline">Take a Tour</span>
@@ -210,7 +217,7 @@ function Home() {
       {/* Floating Performance Settings */}
       <PerformanceSettings />
 
-      <div className="relative z-10 w-full max-w-5xl px-6 py-6 lg:px-8 flex flex-col items-center">
+      <div className="relative z-10 w-full max-w-5xl px-3 sm:px-6 py-4 sm:py-6 lg:px-8 flex flex-col items-center">
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -218,75 +225,13 @@ function Home() {
           transition={{ duration: 0.8, ease: "easeOut" }}
           className="text-center w-full max-w-md"
         >
-          <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-[11px] font-bold uppercase tracking-widest text-cyan-400">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-800/50 border border-slate-700 backdrop-blur-sm mb-6 text-[11px] font-bold uppercase tracking-widest text-cyan-400">
             <Zap className="w-3 h-3 fill-cyan-400" />
             Real-Time Sync • <span className="text-cyan-300/80">Beta v{siteConfig.version}</span>
           </div>
 
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-normal mb-4 pb-2 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 relative inline-block">
             {siteConfig.name}
-
-            {/* Tiny Pro Logo at Title End */}
-            <div
-              className="absolute -right-10 bottom-2 md:-right-12 md:bottom-2.5 cursor-help group/pro"
-              onMouseEnter={() => setIsProHovered(true)}
-              onMouseLeave={() => setIsProHovered(false)}
-            >
-              <motion.div
-                whileHover={{ scale: 1.1, rotate: 10 }}
-                className="p-1 rounded-md bg-gradient-to-br from-blue-500/20 to-indigo-500/20 border border-blue-500/30 backdrop-blur-sm shadow-lg shadow-blue-500/10"
-              >
-                <Crown className="w-3.5 h-3.5 md:w-4 md:h-4 text-blue-400 fill-blue-400/20" />
-              </motion.div>
-
-              <AnimatePresence>
-                {isProHovered && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                    className="absolute top-full right-0 md:left-1/2 md:-translate-x-1/2 mt-3 w-[240px] bg-slate-900/98 backdrop-blur-3xl border border-blue-500/30 p-1 rounded-3xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)] z-50 pointer-events-none origin-top-right md:origin-top overflow-hidden"
-                  >
-                    {/* Compact Inner Content */}
-                    <div className="relative p-4 rounded-[1.4rem] bg-gradient-to-br from-slate-900 to-blue-900/10">
-                      <div className="relative z-10">
-                        {/* Elite Header */}
-                        <div className="flex items-center gap-2 mb-4">
-                          <div className="p-1 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                            <Crown className="w-3 h-3 text-blue-400" />
-                          </div>
-                          <h3 className="text-sm font-black text-white tracking-normal uppercase">ProUser Sessions</h3>
-                        </div>
-
-                        {/* Ultra-Compact Feature List */}
-                        <div className="space-y-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-                            <p className="text-[11px] text-slate-300 font-medium tracking-normal leading-none">Permanent <span className="text-blue-400 font-bold">8-char</span> keys</p>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
-                            <p className="text-[11px] text-slate-300 font-medium tracking-normal leading-none">Cloud sync & file vault</p>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 shrink-0 shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
-                            <p className="text-[11px] text-slate-300 font-medium tracking-normal leading-none">End-to-end encryption</p>
-                          </div>
-                        </div>
-
-                        {/* Minimal Footer */}
-                        <div className="mt-4 pt-3 border-t border-slate-800/80 flex justify-between items-center">
-                          <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Phase 2</span>
-                          <span className="text-[8px] font-black text-blue-500/80 uppercase tracking-widest">Coming Soon...</span>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
           </h1>
           <p className="mt-4 text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed">
             Instantly sync your clipboard text and share files securely across all your devices.
@@ -397,11 +342,13 @@ function Home() {
             icon={<Copy className="w-6 h-6 text-cyan-400" />}
             title="Real-time Clipboard"
             desc="Copy on one device, paste on any other—instantly and in real-time."
+            badge={<E2eeToggleBadge />}
           />
           <FeatureCard
             icon={<Cloud className="w-6 h-6 text-blue-400" />}
             title="Cloud File Storage"
             desc="Upload files up to 50MB and access them from any device."
+            badge={<E2eeToggleBadge />}
           />
           <FeatureCard
             icon={<Shield className="w-6 h-6 text-indigo-400" />}
@@ -531,27 +478,35 @@ function Home() {
 
               <form onSubmit={async (e) => {
                 e.preventDefault();
-                if (isVerified) return;
+                const pwd = adminPassword.trim();
+                if (!pwd || isUnlocking) return;
+
+                setIsUnlocking(true);
                 try {
                   const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, {
-                    password: adminPassword
+                    password: pwd
                   });
                   if (res.data.success && res.data.token) {
                     setIsVerified(true);
+                    setAdminError(false);
+                    setAdminErrorMessage(null);
                     sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
                     sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, res.data.isMasterAdmin ? "true" : "false");
-                    setTimeout(() => {
-                      router.push(`/${ADMIN_SESSION_ID}`);
-                      setShowAdminModal(false);
-                      setIsVerified(false);
-                    }, 300);
+                    window.location.href = `/${ADMIN_SESSION_ID}`;
                   } else {
                     setAdminError(true);
+                    setIsUnlocking(false);
                     setTimeout(() => setAdminError(false), 2000);
                   }
-                } catch (err) {
+                } catch (err: any) {
                   setAdminError(true);
-                  setTimeout(() => setAdminError(false), 2000);
+                  setIsUnlocking(false);
+                  if (err.response?.status === 429) {
+                    setAdminErrorMessage(err.response?.data?.error || "Too many passcode unlock attempts. Please try again after 15 minutes.");
+                  } else {
+                    setAdminErrorMessage("Invalid passcode or expired link.");
+                    setTimeout(() => setAdminError(false), 2000);
+                  }
                 }
               }}>
                 <div className="relative mb-4">
@@ -560,28 +515,11 @@ function Home() {
                     autoFocus
                     placeholder="Enter Password"
                     value={adminPassword}
-                    onChange={async (e) => {
-                      const val = e.target.value;
-                      setAdminPassword(val);
-                      if (val.trim()) {
-                        try {
-                          const res = await axios.post(`${API_URL}/session/${ADMIN_SESSION_ID}/unlock`, { password: val });
-                          if (res.data.success && res.data.token) {
-                            setIsVerified(true);
-                            sessionStorage.setItem(`syncosync:auth:${ADMIN_SESSION_ID}`, res.data.token);
-                            sessionStorage.setItem(`syncosync:is_master_admin:${ADMIN_SESSION_ID}`, res.data.isMasterAdmin ? "true" : "false");
-                            setTimeout(() => {
-                              router.push(`/${ADMIN_SESSION_ID}`);
-                              setShowAdminModal(false);
-                              setIsVerified(false);
-                            }, 300);
-                          }
-                        } catch (err) {
-                          // Silent check while typing
-                        }
-                      } else {
-                        setIsVerified(false);
-                      }
+                    onChange={(e) => {
+                      setAdminPassword(e.target.value);
+                      setAdminError(false);
+                      setAdminErrorMessage(null);
+                      setIsVerified(false);
                     }}
                     className={`w-full py-3 px-12 bg-slate-800 border-2 ${adminError ? 'border-rose-500/50' : isVerified ? 'border-emerald-500/50' : 'border-slate-700 focus:border-blue-500/50'} rounded-xl text-center outline-none transition-all placeholder:text-slate-600`}
                   />
@@ -594,12 +532,28 @@ function Home() {
                   </button>
                 </div>
 
+                {adminErrorMessage && (
+                  <p className="text-xs text-rose-400 font-medium mb-3 text-center animate-pulse">
+                    {adminErrorMessage}
+                  </p>
+                )}
+
                 <div className="flex flex-col gap-3">
                   <button
                     type="submit"
-                    className={`w-full py-3 ${isVerified ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20`}
+                    disabled={isUnlocking}
+                    className={`w-full py-3 ${isVerified ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-blue-600 hover:bg-blue-500'} text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 disabled:opacity-80`}
                   >
-                    {isVerified ? "Unlocked!" : "Unlock Session"}
+                    {isUnlocking ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Verifying...</span>
+                      </>
+                    ) : isVerified ? (
+                      "Unlocked!"
+                    ) : (
+                      "Unlock Session"
+                    )}
                   </button>
                 </div>
               </form>
@@ -697,9 +651,43 @@ export default function HomePage() {
   );
 }
 
-const FeatureCard = memo(function FeatureCard({ icon, title, desc }: { icon: React.ReactNode, title: string, desc: string }) {
+const E2eeToggleBadge = memo(function E2eeToggleBadge() {
+  const [expanded, setExpanded] = useState(false);
   return (
-    <div className="bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl p-6 hover:bg-slate-800/50 transition-colors">
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setExpanded(!expanded);
+      }}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-widest transition-all cursor-pointer shadow-lg shadow-emerald-500/5 select-none"
+      title="Click to toggle E2EE encryption status"
+    >
+      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.span
+            initial={{ opacity: 0, width: 0 }}
+            animate={{ opacity: 1, width: "auto" }}
+            exit={{ opacity: 0, width: 0 }}
+            className="overflow-hidden whitespace-nowrap ml-0.5"
+          >
+            AES-256 E2EE
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </button>
+  );
+});
+
+const FeatureCard = memo(function FeatureCard({ icon, title, desc, badge }: { icon: React.ReactNode, title: string, desc: string, badge?: React.ReactNode }) {
+  return (
+    <div className="bg-slate-900/50 backdrop-blur-md border border-slate-800 rounded-2xl p-6 hover:bg-slate-800/50 transition-colors relative">
+      {badge && (
+        <div className="absolute top-4 right-4 z-10">
+          {badge}
+        </div>
+      )}
       <div className="bg-slate-800/80 w-12 h-12 rounded-lg flex items-center justify-center mb-4 border border-slate-700">
         {icon}
       </div>

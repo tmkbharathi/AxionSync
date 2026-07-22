@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Socket } from "socket.io-client";
-import { Mic, MicOff, Minus, Plus, CheckCircle, Copy, Lock } from "lucide-react";
+import { Mic, MicOff, Minus, Plus, CheckCircle, Copy, Lock, ShieldCheck } from "lucide-react";
 import { siteConfig } from "@/config/site";
+import { encryptText, decryptText } from "@/lib/crypto";
 
 export const ClipboardPanel = memo(({ 
   sessionId, 
@@ -22,44 +23,48 @@ export const ClipboardPanel = memo(({
   isFilePanelCollapsed: boolean,
   permissions?: { allowText?: boolean; allowFiles?: boolean; allowUploads?: boolean }
 }) => {
-  const [text, setText] = useState(initialText);
+  const [text, setText] = useState("");
   const [fontSize, setFontSize] = useState(14);
   const [copiedText, setCopiedText] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const textRef = useRef(text);
+  const textRef = useRef("");
   const isLocalChange = useRef(false);
   const recognitionRef = useRef<any>(null);
 
   // Sync with initialText from parent (only for first load or remote updates)
   useEffect(() => {
-    if (initialText !== textRef.current) {
-      setText(initialText);
-      textRef.current = initialText;
-    }
-  }, [initialText]);
+    decryptText(initialText, sessionId).then(decrypted => {
+      if (decrypted !== textRef.current) {
+        setText(decrypted);
+        textRef.current = decrypted;
+      }
+    });
+  }, [initialText, sessionId]);
 
   // WebSocket Listener for text updates
   useEffect(() => {
     if (!socket) return;
-    const handleUpdate = ({ content }: { content: string }) => {
-      if (content !== textRef.current) {
+    const handleUpdate = async ({ content }: { content: string }) => {
+      const decrypted = await decryptText(content, sessionId);
+      if (decrypted !== textRef.current) {
         isLocalChange.current = false;
-        setText(content);
-        textRef.current = content;
-        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, content);
+        setText(decrypted);
+        textRef.current = decrypted;
+        localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, decrypted);
       }
     };
     socket.on("text_updated", handleUpdate);
     return () => { socket.off("text_updated", handleUpdate); };
   }, [socket, sessionId]);
 
-  // Debounced auto-save & Socket broadcast
+  // Debounced auto-save & Socket broadcast with AES-256 E2EE encryption
   useEffect(() => {
     if (!isLocalChange.current || permissions?.allowUploads === false) return;
     
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       if (socket && connected) {
-        socket.emit("update_text", { sessionId, content: text });
+        const encrypted = await encryptText(text, sessionId);
+        socket.emit("update_text", { sessionId, content: encrypted });
         localStorage.setItem(`${siteConfig.slug}:text:${sessionId}`, text);
       }
       isLocalChange.current = false;
@@ -181,7 +186,7 @@ export const ClipboardPanel = memo(({
             value={text}
             onChange={handleTextChange}
             readOnly={isReadOnly}
-            placeholder={isReadOnly ? "Read-only mode (Editing disabled by admin)" : "Type or paste text here... It will sync instantly."}
+            placeholder={isReadOnly ? "Read-only mode (Editing disabled by admin)" : "Type or paste text here... It will sync securely with End-to-End Encryption."}
             style={{ scrollbarGutter: 'stable', fontSize: `${fontSize}px` }}
             className={`w-full h-full p-3 bg-transparent resize-none outline-none font-mono leading-relaxed ${isReadOnly ? 'text-slate-400 cursor-not-allowed' : 'text-slate-200 placeholder:text-slate-600'}`}
           />

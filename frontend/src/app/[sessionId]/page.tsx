@@ -249,7 +249,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
   const [isAutoUnlocking, setIsAutoUnlocking] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.has("passcode");
+    return sessionId === ADMIN_SESSION_ID && urlParams.has("passcode");
   });
 
   useEffect(() => {
@@ -534,13 +534,17 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     }
   }, [sessionId, router]);
 
-  if (!hasMounted || isAutoUnlocking) {
+  if (sessionId === ADMIN_SESSION_ID && isAutoUnlocking) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
         <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
         <p className="text-slate-400 text-xs font-mono tracking-widest uppercase animate-pulse">Verifying Access Passcode...</p>
       </div>
     );
+  }
+
+  if (!hasMounted) {
+    return null;
   }
 
   // Admin Unlock Overlay

@@ -38,41 +38,74 @@ const QRCodeSVG = dynamic(() => import("qrcode.react").then(mod => mod.QRCodeSVG
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-// Calculate SHA-256 hash of a file using Web Crypto API with chunked memory optimization
+// Read Blob/File as ArrayBuffer with fallback for older browsers (e.g. LG WebOS browser)
+const readArrayBuffer = async (blob: Blob): Promise<ArrayBuffer> => {
+  if (typeof blob.arrayBuffer === "function") {
+    try {
+      return await blob.arrayBuffer();
+    } catch (e) {
+      // Fallback to FileReader
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error || new Error("FileReader failed"));
+    reader.readAsArrayBuffer(blob);
+  });
+};
+
+// Calculate SHA-256 hash of a file using Web Crypto API with chunked memory optimization and safe fallback
 const calculateSHA256 = async (file: File): Promise<string> => {
-  const MAX_RAM_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit for single-buffer digest
-  if (file.size <= MAX_RAM_FILE_SIZE) {
-    const arrayBuffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+  try {
+    if (typeof window !== "undefined" && window.crypto && window.crypto.subtle && typeof window.crypto.subtle.digest === "function") {
+      const MAX_RAM_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit for single-buffer digest
+      if (file.size <= MAX_RAM_FILE_SIZE) {
+        const arrayBuffer = await readArrayBuffer(file);
+        const hashBuffer = await window.crypto.subtle.digest("SHA-256", arrayBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+      }
+
+      // Fast chunked sampling digest for large files (> 50MB) to prevent browser memory exhaustion
+      const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+      const headChunk = file.slice(0, CHUNK_SIZE);
+      const midStart = Math.floor(file.size / 2);
+      const midChunk = file.slice(midStart, midStart + CHUNK_SIZE);
+      const tailChunk = file.slice(Math.max(0, file.size - CHUNK_SIZE));
+
+      const [headBuffer, midBuffer, tailBuffer] = await Promise.all([
+        readArrayBuffer(headChunk),
+        readArrayBuffer(midChunk),
+        readArrayBuffer(tailChunk)
+      ]);
+
+      const metaString = `${file.name}:${file.size}:${file.lastModified}`;
+      const metaBuffer = new TextEncoder().encode(metaString);
+
+      const combined = new Uint8Array(headBuffer.byteLength + midBuffer.byteLength + tailBuffer.byteLength + metaBuffer.byteLength);
+      combined.set(new Uint8Array(headBuffer), 0);
+      combined.set(new Uint8Array(midBuffer), headBuffer.byteLength);
+      combined.set(new Uint8Array(tailBuffer), headBuffer.byteLength + midBuffer.byteLength);
+      combined.set(metaBuffer, headBuffer.byteLength + midBuffer.byteLength + tailBuffer.byteLength);
+
+      const hashBuffer = await window.crypto.subtle.digest("SHA-256", combined);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+  } catch (err) {
+    console.warn("Web Crypto SHA-256 digest failed, falling back to simple hash:", err);
   }
 
-  // Fast chunked sampling digest for large files (> 50MB) to prevent browser memory exhaustion
-  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
-  const headChunk = file.slice(0, CHUNK_SIZE);
-  const midStart = Math.floor(file.size / 2);
-  const midChunk = file.slice(midStart, midStart + CHUNK_SIZE);
-  const tailChunk = file.slice(Math.max(0, file.size - CHUNK_SIZE));
-
-  const [headBuffer, midBuffer, tailBuffer] = await Promise.all([
-    headChunk.arrayBuffer(),
-    midChunk.arrayBuffer(),
-    tailChunk.arrayBuffer()
-  ]);
-
-  const metaString = `${file.name}:${file.size}:${file.lastModified}`;
-  const metaBuffer = new TextEncoder().encode(metaString);
-
-  const combined = new Uint8Array(headBuffer.byteLength + midBuffer.byteLength + tailBuffer.byteLength + metaBuffer.byteLength);
-  combined.set(new Uint8Array(headBuffer), 0);
-  combined.set(new Uint8Array(midBuffer), headBuffer.byteLength);
-  combined.set(new Uint8Array(tailBuffer), headBuffer.byteLength + midBuffer.byteLength);
-  combined.set(metaBuffer, headBuffer.byteLength + midBuffer.byteLength + tailBuffer.byteLength);
-
-  const hashBuffer = await crypto.subtle.digest("SHA-256", combined);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+  // Fallback hash generator for non-HTTPS local IP or older LG WebOS browsers lacking crypto.subtle
+  let hashVal = 0;
+  const str = `${file.name}:${file.size}:${file.lastModified}`;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hashVal = (hashVal << 5) - hashVal + char;
+    hashVal |= 0;
+  }
+  return `legacy_${Math.abs(hashVal)}_${file.size}_${file.lastModified}`;
 };
 
 // Admin Credentials
@@ -509,10 +542,11 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     if (failed.length > 0) {
       results.forEach((r, idx) => {
         if (r.status === 'rejected') {
-          console.error(`Upload failed for file "${validFiles[idx].name}":`, r.reason);
+          console.error(`Upload failed for file "${validFiles[idx].name}":`, (r as PromiseRejectedResult).reason);
         }
       });
-      alert(`${failed.length} file(s) failed to upload. Check browser console (F12) for detailed errors.`);
+      const firstError = (failed[0] as PromiseRejectedResult).reason?.message || "Unknown error";
+      alert(`${failed.length} file(s) failed to upload (${firstError}).`);
     }
     
     setUploading(false);

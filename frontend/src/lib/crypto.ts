@@ -97,6 +97,22 @@ export async function decryptText(payload: string, secretKey: string): Promise<s
   }
 }
 
+async function readBlobAsArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  if (typeof blob.arrayBuffer === "function") {
+    try {
+      return await blob.arrayBuffer();
+    } catch (e) {
+      // Fallback to FileReader if arrayBuffer() throws
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error || new Error("FileReader failed"));
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 /**
  * Encrypts a Blob/File with AES-256-GCM into an E2EE Blob: [16-byte magic][12-byte IV][Ciphertext]
  */
@@ -108,7 +124,7 @@ export async function encryptFile(file: Blob, secretKey: string): Promise<Blob> 
   try {
     const key = await deriveKey(secretKey);
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    const arrayBuffer = await file.arrayBuffer();
+    const arrayBuffer = await readBlobAsArrayBuffer(file);
 
     const ciphertextBuffer = await window.crypto.subtle.encrypt(
       { name: "AES-GCM", iv },
@@ -137,7 +153,7 @@ export async function decryptFile(encryptedBlob: Blob, secretKey: string, origin
   }
 
   try {
-    const arrayBuffer = await encryptedBlob.arrayBuffer();
+    const arrayBuffer = await readBlobAsArrayBuffer(encryptedBlob);
     const bytes = new Uint8Array(arrayBuffer);
 
     if (bytes.length < FILE_MAGIC.length + 12) {
@@ -172,3 +188,4 @@ export async function decryptFile(encryptedBlob: Blob, secretKey: string, origin
     return encryptedBlob;
   }
 }
+

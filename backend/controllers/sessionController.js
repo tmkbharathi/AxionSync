@@ -59,10 +59,10 @@ async function unlockSession(req, res) {
     return res.status(400).json({ error: "This session does not require unlocking." });
   }
 
-  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "tmkbharathi";
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
   
   // 1. Check Master Admin Password
-  if (password === ADMIN_PASSWORD) {
+  if (ADMIN_PASSWORD && password === ADMIN_PASSWORD) {
     const token = crypto.randomBytes(16).toString("hex");
     const tokenKey = `session:${sessionId}:token`;
     await redis.set(tokenKey, token, "EX", 86400);

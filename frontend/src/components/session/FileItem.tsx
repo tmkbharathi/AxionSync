@@ -2,9 +2,9 @@
 
 import { memo } from "react";
 import { motion } from "framer-motion";
-import { Check, Download, Trash2, Globe } from "lucide-react";
+import { Check, Download, Trash2, Globe, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { FileMeta } from "./types";
+import { FileMeta, DownloadState } from "./types";
 import { formatSize } from "@/utils/format";
 
 export const FileItem = memo(({ 
@@ -12,22 +12,34 @@ export const FileItem = memo(({
   handleDownload, 
   handleDelete,
   isSelected,
-  onToggleSelect
+  onToggleSelect,
+  downloadState
 }: { 
   file: FileMeta, 
   handleDownload: (f: FileMeta) => void, 
   handleDelete: (f: FileMeta) => void,
   isSelected: boolean,
-  onToggleSelect: (id: string) => void
+  onToggleSelect: (id: string) => void,
+  downloadState?: DownloadState
 }) => {
+  const isDownloading = !!downloadState;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className={`bg-slate-800/40 border p-3 rounded-xl flex items-center justify-between group transition-colors ${isSelected ? 'border-blue-500/50 bg-blue-500/5' : 'border-slate-700/50 hover:bg-slate-800/80'}`}
+      className={`bg-slate-800/40 border p-3 rounded-xl flex items-center justify-between group transition-colors relative overflow-hidden ${isSelected ? 'border-blue-500/50 bg-blue-500/5' : 'border-slate-700/50 hover:bg-slate-800/80'}`}
     >
-      <div className="flex items-center gap-3 overflow-hidden pr-3">
+      {/* Background progress bar when downloading */}
+      {isDownloading && (
+        <div 
+          className="absolute bottom-0 left-0 top-0 bg-blue-500/10 transition-all duration-300 pointer-events-none"
+          style={{ width: `${downloadState.status === 'decrypting' ? 100 : downloadState.progress}%` }}
+        />
+      )}
+
+      <div className="flex items-center gap-3 overflow-hidden pr-3 relative z-10">
         <button 
           onClick={() => onToggleSelect(file.id)}
           className="shrink-0 p-1 -ml-1 flex items-center justify-center group/check"
@@ -49,19 +61,33 @@ export const FileItem = memo(({
         <div className="min-w-0">
           <p className="text-sm font-medium text-slate-200 truncate" title={file.name}>{file.name}</p>
           <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-            <span>{formatSize(file.size)}</span>
-            <span>•</span>
-            <span>{formatDistanceToNow(new Date(file.uploadedAt), { addSuffix: true })}</span>
+            {isDownloading ? (
+              <span className="text-blue-400 font-mono flex items-center gap-1.5 font-medium">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                {downloadState.status === 'decrypting' ? 'Decrypting file...' : `Downloading ${downloadState.progress}%`}
+              </span>
+            ) : (
+              <>
+                <span>{formatSize(file.size)}</span>
+                <span>•</span>
+                <span>{formatDistanceToNow(new Date(file.uploadedAt), { addSuffix: true })}</span>
+              </>
+            )}
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity relative z-10">
         <button 
           onClick={() => handleDownload(file)}
-          className="p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors"
-          title="Download"
+          disabled={isDownloading}
+          className={`p-2 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded-md transition-colors ${isDownloading ? 'opacity-50 cursor-not-allowed' : ''}`}
+          title={isDownloading ? "Downloading in progress..." : "Download"}
         >
-          <Download className="w-4 h-4" />
+          {isDownloading ? (
+            <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4" />
+          )}
         </button>
         <button 
           onClick={() => handleDelete(file)}

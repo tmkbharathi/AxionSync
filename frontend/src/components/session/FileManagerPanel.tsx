@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, Trash2, Loader2, UploadCloud, Cloud, Lock } from "lucide-react";
-import { FileMeta } from "./types";
+import { FileMeta, DownloadState } from "./types";
 import { FileItem } from "./FileItem";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
@@ -18,7 +18,8 @@ export const FileManagerPanel = memo(({
   handleDeleteFile,
   setIsFilePanelCollapsed,
   isAdminSession,
-  permissions
+  permissions,
+  downloadStates
 }: { 
   files: FileMeta[], 
   uploading: boolean, 
@@ -30,7 +31,8 @@ export const FileManagerPanel = memo(({
   handleDeleteFile: (f: FileMeta) => void,
   setIsFilePanelCollapsed: (v: boolean) => void,
   isAdminSession: boolean,
-  permissions?: { allowText?: boolean; allowFiles?: boolean; allowUploads?: boolean }
+  permissions?: { allowText?: boolean; allowFiles?: boolean; allowUploads?: boolean },
+  downloadStates?: Record<string, DownloadState>
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -213,6 +215,7 @@ export const FileManagerPanel = memo(({
                     handleDelete={handleDeleteFile} 
                     isSelected={selectedIds.has(f.id)}
                     onToggleSelect={toggleSelect}
+                    downloadState={downloadStates?.[f.id]}
                   />
                 ))}
               </AnimatePresence>

@@ -19,7 +19,7 @@ import { OnboardingTour } from "@/components/OnboardingTour";
 import PerformanceSettings from "@/components/PerformanceSettings";
 
 // Import modular components & types
-import { FileMeta, ActiveDevice } from "@/components/session/types";
+import { FileMeta, ActiveDevice, DownloadState } from "@/components/session/types";
 import { DeviceItem } from "@/components/session/DeviceItem";
 import { SessionHeader } from "@/components/session/SessionHeader";
 import { SessionFooter } from "@/components/session/SessionFooter";
@@ -553,13 +553,27 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
     setUploadProgress(0);
   }, [sessionId, getAuthHeaders]);
 
+  const [downloadStates, setDownloadStates] = useState<Record<string, DownloadState>>({});
+
   const handleDownloadFile = useCallback(async (file: FileMeta) => {
     try {
+      setDownloadStates(prev => ({ ...prev, [file.id]: { progress: 0, status: 'downloading' } }));
+      
       const res = await axios.get(`${API_URL}/download?s3Key=${encodeURIComponent(file.s3Key)}`, { headers: getAuthHeaders() });
-      const rawRes = await fetch(res.data.url);
-      const rawBlob = await rawRes.blob();
-
-      const decryptedBlob = await decryptFile(rawBlob, sessionId, file.mimeType);
+      
+      const rawRes = await axios.get<Blob>(res.data.url, {
+        responseType: 'blob',
+        onDownloadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setDownloadStates(prev => ({ ...prev, [file.id]: { progress: percent, status: 'downloading' } }));
+          }
+        }
+      });
+      
+      setDownloadStates(prev => ({ ...prev, [file.id]: { progress: 100, status: 'decrypting' } }));
+      
+      const decryptedBlob = await decryptFile(rawRes.data, sessionId, file.mimeType);
 
       const blobUrl = URL.createObjectURL(decryptedBlob);
       const a = document.createElement("a");
@@ -568,10 +582,16 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
     } catch (err) {
       console.error("Download or decryption error:", err);
       alert("Could not download or decrypt file");
+    } finally {
+      setDownloadStates(prev => {
+        const next = { ...prev };
+        delete next[file.id];
+        return next;
+      });
     }
   }, [sessionId, getAuthHeaders]);
 
@@ -877,6 +897,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           setIsFilePanelCollapsed={setIsFilePanelCollapsed}
           isAdminSession={sessionId === ADMIN_SESSION_ID}
           permissions={permissions}
+          downloadStates={downloadStates}
         />
       </main>
 

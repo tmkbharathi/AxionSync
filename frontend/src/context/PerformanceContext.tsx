@@ -15,7 +15,7 @@ const PerformanceContext = createContext<PerformanceContextType | undefined>(und
 
 export function PerformanceProvider({ children }: { children: React.ReactNode }) {
   const [isStaticBackground, setIsStaticBackgroundState] = useState(false);
-  const [disableCustomCursor, setDisableCustomCursorState] = useState(false);
+  const [disableCustomCursor, setDisableCustomCursorState] = useState(true);
   const [detectedLowSpec, setDetectedLowSpec] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -48,8 +48,8 @@ export function PerformanceProvider({ children }: { children: React.ReactNode })
     if (savedDisableCursor !== null) {
       setDisableCustomCursorState(savedDisableCursor === "true");
     } else {
-      // Default to disabling custom cursor if low-spec
-      setDisableCustomCursorState(isLow);
+      // Default to disabling custom cursor
+      setDisableCustomCursorState(true);
     }
 
     setIsInitialized(true);

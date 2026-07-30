@@ -18,3 +18,8 @@ export interface ActiveDevice {
   id: string;
   info: DeviceInfo;
 }
+
+export interface DownloadState {
+  progress: number;
+  status: 'downloading' | 'decrypting';
+}

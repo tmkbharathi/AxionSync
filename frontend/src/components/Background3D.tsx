@@ -4,11 +4,25 @@ import { useRef, useMemo, useEffect, memo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
 import { usePerformance } from "@/context/PerformanceContext";
+import type * as THREE from "three";
+
+// Pure deterministic pseudo-random number generator to satisfy purity rules
+function pureRandom(seed: number) {
+  let t = (seed += 0x6d2b79f5);
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+interface StarBackgroundProps {
+  isStatic?: boolean;
+  [key: string]: unknown;
+}
 
 // Animated Particle Background using Three.js (Memoized to prevent unnecessary re-renders)
-const StarBackground = memo(function StarBackground({ isStatic, ...props }: any) {
-  const groupRef = useRef<any>(null);
-  const pointsRef = useRef<any>(null);
+const StarBackground = memo(function StarBackground({ isStatic, ...props }: StarBackgroundProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const pointsRef = useRef<THREE.Points>(null);
   const pointer = useRef({ x: 0, y: 0 });
   const timeRef = useRef(0);
 
@@ -20,19 +34,19 @@ const StarBackground = memo(function StarBackground({ isStatic, ...props }: any)
     };
     window.addEventListener("pointermove", handlePointerMove);
     return () => window.removeEventListener("pointermove", handlePointerMove);
-  }, []);
+  }, [isStatic]);
 
   const sphere = useMemo(() => {
     const count = 5000;
     
-    // Generate random points within a sphere of radius 1.2
+    // Generate deterministic random points within a sphere of radius 1.2
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      const u = Math.random();
-      const v = Math.random();
+      const u = pureRandom(i * 3 + 1);
+      const v = pureRandom(i * 3 + 2);
       const theta = 2 * Math.PI * u;
       const phi = Math.acos(2 * v - 1);
-      const r = Math.cbrt(Math.random()) * 1.2;
+      const r = Math.cbrt(pureRandom(i * 3 + 3)) * 1.2;
 
       positions[i * 3] = r * Math.sin(phi) * Math.cos(theta); // x
       positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta); // y
@@ -41,7 +55,7 @@ const StarBackground = memo(function StarBackground({ isStatic, ...props }: any)
     return positions;
   }, []);
 
-  useFrame((state, delta) => {
+  useFrame((_state, delta) => {
     if (isStatic) return; // Disable all movement for static mode
     if (typeof document !== "undefined" && document.hidden) return;
 

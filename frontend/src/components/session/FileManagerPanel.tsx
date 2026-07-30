@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback, memo } from "react";
+import { useRef, useState, useCallback, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, Trash2, Loader2, UploadCloud, Cloud, Lock } from "lucide-react";
-import { FileMeta } from "./types";
+import { FileMeta, DownloadState } from "./types";
 import { FileItem } from "./FileItem";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
@@ -16,9 +16,9 @@ export const FileManagerPanel = memo(({
   processFiles,
   handleDownloadFile,
   handleDeleteFile,
-  setIsFilePanelCollapsed,
   isAdminSession,
-  permissions
+  permissions,
+  downloadStates
 }: { 
   files: FileMeta[], 
   uploading: boolean, 
@@ -28,9 +28,10 @@ export const FileManagerPanel = memo(({
   processFiles: (files: File[]) => void,
   handleDownloadFile: (f: FileMeta) => void,
   handleDeleteFile: (f: FileMeta) => void,
-  setIsFilePanelCollapsed: (v: boolean) => void,
+  setIsFilePanelCollapsed?: (v: boolean) => void,
   isAdminSession: boolean,
-  permissions?: { allowText?: boolean; allowFiles?: boolean; allowUploads?: boolean }
+  permissions?: { allowText?: boolean; allowFiles?: boolean; allowUploads?: boolean },
+  downloadStates?: Record<string, DownloadState>
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -42,16 +43,14 @@ export const FileManagerPanel = memo(({
   const isReadOnly = permissions?.allowUploads === false;
   const isFilesHidden = permissions?.allowFiles === false;
 
-  // Cleanup selectedIds when files change (e.g. on delete)
-  useEffect(() => {
-    const validIds = new Set(files.map(f => f.id));
-    let changed = false;
-    const newSet = new Set<string>();
+  // Derived valid selected IDs (eliminates useEffect set-state-in-effect warning)
+  const validSelectedIds = useMemo(() => {
+    const fileIdSet = new Set(files.map(f => f.id));
+    const filtered = new Set<string>();
     selectedIds.forEach(id => {
-      if (validIds.has(id)) newSet.add(id);
-      else changed = true;
+      if (fileIdSet.has(id)) filtered.add(id);
     });
-    if (changed) setSelectedIds(newSet);
+    return filtered;
   }, [files, selectedIds]);
 
   const toggleSelect = useCallback((id: string) => {
@@ -64,26 +63,26 @@ export const FileManagerPanel = memo(({
   }, []);
 
   const handleSelectAll = useCallback(() => {
-    if (selectedIds.size === files.length) {
+    if (validSelectedIds.size === files.length) {
       setSelectedIds(new Set());
     } else {
       setSelectedIds(new Set(files.map(f => f.id)));
     }
-  }, [files, selectedIds.size]);
+  }, [files, validSelectedIds.size]);
 
   const handleDeleteSelected = useCallback(() => {
-    if (isReadOnly || selectedIds.size === 0) return;
+    if (isReadOnly || validSelectedIds.size === 0) return;
     setShowDeleteModal(true);
-  }, [selectedIds.size, isReadOnly]);
+  }, [validSelectedIds.size, isReadOnly]);
 
   const confirmDeleteSelected = useCallback(async () => {
-    const filesToDelete = files.filter(f => selectedIds.has(f.id));
+    const filesToDelete = files.filter(f => validSelectedIds.has(f.id));
     for (const f of filesToDelete) {
       handleDeleteFile(f);
     }
     setSelectedIds(new Set());
     setShowDeleteModal(false);
-  }, [selectedIds, files, handleDeleteFile]);
+  }, [validSelectedIds, files, handleDeleteFile]);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (isReadOnly) return;
@@ -211,8 +210,9 @@ export const FileManagerPanel = memo(({
                     file={f} 
                     handleDownload={handleDownloadFile} 
                     handleDelete={handleDeleteFile} 
-                    isSelected={selectedIds.has(f.id)}
+                    isSelected={validSelectedIds.has(f.id)}
                     onToggleSelect={toggleSelect}
+                    downloadState={downloadStates?.[f.id]}
                   />
                 ))}
               </AnimatePresence>
@@ -246,7 +246,7 @@ export const FileManagerPanel = memo(({
                 
                 <h3 className="text-2xl font-bold text-white mb-3">Delete Selected Files?</h3>
                 <p className="text-slate-400 mb-8 leading-relaxed">
-                  You are about to delete <span className="text-rose-400 font-semibold">{selectedIds.size} file{selectedIds.size === 1 ? '' : 's'}</span> for <span className="text-white font-semibold">everyone</span> in this room. This action cannot be undone.
+                  You are about to delete <span className="text-rose-400 font-semibold">{validSelectedIds.size} file{validSelectedIds.size === 1 ? '' : 's'}</span> for <span className="text-white font-semibold">everyone</span> in this room. This action cannot be undone.
                 </p>
                 
                 <div className="flex flex-col gap-3">

@@ -4,7 +4,6 @@ import { useState, useEffect, memo } from "react";
 import { 
   Smartphone, Info, HelpCircle, QrCode, Share2, Trash2, LogOut, CheckCircle, KeyRound, Clock
 } from "lucide-react";
-import { siteConfig } from "@/config/site";
 
 export const SessionHeader = memo(({ 
   connected, 
@@ -45,14 +44,6 @@ export const SessionHeader = memo(({
     if (guestExpiresAt) return Math.max(0, Math.floor((guestExpiresAt - Date.now()) / 1000));
     return guestRemainingSeconds ?? null;
   });
-
-  useEffect(() => {
-    if (guestExpiresAt) {
-      setCountdown(Math.max(0, Math.floor((guestExpiresAt - Date.now()) / 1000)));
-    } else {
-      setCountdown(guestRemainingSeconds ?? null);
-    }
-  }, [guestRemainingSeconds, guestExpiresAt]);
 
   useEffect(() => {
     if (guestExpiresAt) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronLeft, ChevronRight, Sparkles, HelpCircle } from "lucide-react";
 
@@ -23,11 +23,46 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [showCelebration, setShowCelebration] = useState(false);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
-  const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
+  const [windowSize, setWindowSize] = useState(() => ({
+    width: typeof window !== "undefined" ? window.innerWidth : 0,
+    height: typeof window !== "undefined" ? window.innerHeight : 0
+  }));
   const cardRef = useRef<HTMLDivElement>(null);
-  const [cardCoords, setCardCoords] = useState({ top: 0, left: 0 });
+  const [cardCoords, setCardCoords] = useState(() => ({
+    top: typeof window !== "undefined" ? Math.max(16, (window.innerHeight - 240) / 2) : 100,
+    left: typeof window !== "undefined" ? Math.max(16, (window.innerWidth - 340) / 2) : 100
+  }));
 
   const activeStep = steps[currentStepIdx];
+
+  const handleNext = useCallback(() => {
+    if (currentStepIdx < steps.length - 1) {
+      setCurrentStepIdx(prev => prev + 1);
+    } else {
+      setShowCelebration(true);
+    }
+  }, [currentStepIdx, steps.length]);
+
+  const handleBack = useCallback(() => {
+    if (showCelebration) {
+      setShowCelebration(false);
+    } else if (currentStepIdx > 0) {
+      setCurrentStepIdx(prev => prev - 1);
+    }
+  }, [showCelebration, currentStepIdx]);
+
+  const handleClose = useCallback(() => {
+    onClose();
+    setShowCelebration(false);
+    setCurrentStepIdx(0);
+  }, [onClose]);
+
+  const handleComplete = useCallback(() => {
+    localStorage.setItem(`syncosync:tour:${tourKey}`, "completed");
+    onClose();
+    setShowCelebration(false);
+    setCurrentStepIdx(0);
+  }, [tourKey, onClose]);
 
   // Notify parent component of step changes (e.g. to switch mobile tabs or uncollapse panels)
   useEffect(() => {
@@ -39,7 +74,6 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
   // Initialize window size
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
       const handleResize = () => {
         setWindowSize({ width: window.innerWidth, height: window.innerHeight });
       };
@@ -51,8 +85,8 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
   // Monitor target elements and calculate positions
   useEffect(() => {
     if (!isActive || steps.length === 0 || showCelebration) {
-      setTargetRect(null);
-      return;
+      const frameId = requestAnimationFrame(() => setTargetRect(null));
+      return () => cancelAnimationFrame(frameId);
     }
 
     const updatePosition = () => {
@@ -89,7 +123,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
       setTargetRect(null);
     };
 
-    // Run immediately and setup scroll/resize handlers + delayed retries (for tab animation/DOM mount)
+    // Run immediately and setup scroll/resize handlers + delayed retries
     updatePosition();
     
     const timer1 = setTimeout(updatePosition, 50);
@@ -106,7 +140,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
       window.removeEventListener("scroll", updatePosition);
       window.removeEventListener("resize", updatePosition);
     };
-  }, [currentStepIdx, isActive, activeStep, windowSize, showCelebration]);
+  }, [currentStepIdx, isActive, activeStep, windowSize, showCelebration, steps.length]);
 
   // Position the card near the highlighted element
   useEffect(() => {
@@ -116,13 +150,13 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
     const cardWidth = cardRef.current?.offsetWidth || 340;
     const cardHeight = cardRef.current?.offsetHeight || 220;
 
-    let top = window.innerHeight / 2 - cardHeight / 2;
-    let left = window.innerWidth / 2 - cardWidth / 2;
+    let top = (window.innerHeight - cardHeight) / 2;
+    let left = (window.innerWidth - cardWidth) / 2;
 
     if (targetRect && !showCelebration) {
       let position = activeStep.position || "bottom";
 
-      // On mobile screens (<768px), fallback "left" or "right" to "bottom" or "top" for clear visibility
+      // On mobile screens (<768px), fallback "left" or "right" to "bottom" or "top"
       if (window.innerWidth < 768 && (position === "left" || position === "right")) {
         const spaceBelow = window.innerHeight - targetRect.bottom;
         position = spaceBelow >= cardHeight + margin ? "bottom" : "top";
@@ -147,31 +181,24 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
           break;
         case "center":
         default:
-          top = window.innerHeight / 2 - cardHeight / 2;
-          left = window.innerWidth / 2 - cardWidth / 2;
+          top = (window.innerHeight - cardHeight) / 2;
+          left = (window.innerWidth - cardWidth) / 2;
           break;
       }
-
-      // Add scroll offsets since getBoundingClientRect is relative to viewport
-      top += window.scrollY;
-      left += window.scrollX;
-    } else {
-      // Centered position + scroll offsets
-      top += window.scrollY;
-      left += window.scrollX;
     }
 
-    // Viewport clamping (keep card fully on-screen)
+    // Viewport clamping (keep card fully on-screen relative to viewport)
     const padding = 16;
-    const minLeft = window.scrollX + padding;
-    const maxLeft = window.scrollX + window.innerWidth - cardWidth - padding;
-    const minTop = window.scrollY + padding;
-    const maxTop = window.scrollY + window.innerHeight - cardHeight - padding;
+    const minLeft = padding;
+    const maxLeft = Math.max(padding, window.innerWidth - cardWidth - padding);
+    const minTop = padding;
+    const maxTop = Math.max(padding, window.innerHeight - cardHeight - padding);
 
     left = Math.max(minLeft, Math.min(maxLeft, left));
     top = Math.max(minTop, Math.min(maxTop, top));
 
-    setCardCoords({ top, left });
+    const frameId = requestAnimationFrame(() => setCardCoords({ top, left }));
+    return () => cancelAnimationFrame(frameId);
   }, [targetRect, activeStep, isActive, windowSize, showCelebration]);
 
   // Keyboard navigation controls
@@ -194,59 +221,29 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isActive, showCelebration, currentStepIdx, steps.length]);
+  }, [isActive, showCelebration, currentStepIdx, steps.length, handleComplete, handleNext, handleClose]);
 
   if (!isActive) return null;
 
-  const handleNext = () => {
-    if (currentStepIdx < steps.length - 1) {
-      setCurrentStepIdx(prev => prev + 1);
-    } else {
-      setShowCelebration(true);
-    }
-  };
-
-  const handleBack = () => {
-    if (showCelebration) {
-      setShowCelebration(false);
-    } else if (currentStepIdx > 0) {
-      setCurrentStepIdx(prev => prev - 1);
-    }
-  };
-
-  const handleClose = () => {
-    onClose();
-    setShowCelebration(false);
-    setCurrentStepIdx(0);
-  };
-
-  const handleComplete = () => {
-    localStorage.setItem(`syncosync:tour:${tourKey}`, "completed");
-    onClose();
-    setShowCelebration(false);
-    setCurrentStepIdx(0);
-  };
-
   // Render a single full-screen backdrop overlay with an SVG mask for a smooth animated spotlight cutout
   const renderOverlays = () => {
-    const docHeight = typeof document !== "undefined" ? (document.documentElement.scrollHeight || window.innerHeight) : "100%";
     const maskId = `tour-spotlight-mask-${tourKey}`;
 
     const padding = 8;
     const rx = 12;
 
-    const targetX = targetRect ? targetRect.left + window.scrollX - padding : 0;
-    const targetY = targetRect ? targetRect.top + window.scrollY - padding : 0;
+    const targetX = targetRect ? targetRect.left - padding : 0;
+    const targetY = targetRect ? targetRect.top - padding : 0;
     const targetW = targetRect ? Math.max(0, targetRect.width + padding * 2) : 0;
     const targetH = targetRect ? Math.max(0, targetRect.height + padding * 2) : 0;
 
     return (
-      <div className="absolute inset-0 pointer-events-none" style={{ height: docHeight }}>
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ height: docHeight }}>
+      <div className="fixed inset-0 pointer-events-none z-40">
+        <svg className="fixed inset-0 w-full h-full pointer-events-none z-40">
           <defs>
-            <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height={docHeight}>
-              {/* White rect covers full screen so backdrop blur displays smoothly everywhere */}
-              <rect x="0" y="0" width="100%" height={docHeight} fill="white" />
+            <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%">
+              {/* White rect covers full viewport so backdrop blur displays smoothly everywhere */}
+              <rect x="0" y="0" width="100%" height="100%" fill="white" />
               {/* Black rect smoothly cuts out the spotlight hole for the target element */}
               {targetRect && !showCelebration && (
                 <motion.rect
@@ -269,9 +266,8 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
 
         {/* Single uniform full-screen backdrop overlay */}
         <div 
-          className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-300"
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm pointer-events-auto transition-all duration-300 z-40"
           style={{ 
-            height: docHeight,
             mask: `url(#${maskId})`,
             WebkitMask: `url(#${maskId})`
           }}
@@ -281,7 +277,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
   };
 
   return (
-    <div className="absolute inset-0 z-40 pointer-events-none select-none">
+    <div className="fixed inset-0 z-50 pointer-events-none select-none">
       {/* Dark background overlay with dynamic spotlight cutout */}
       {renderOverlays()}
 
@@ -292,13 +288,13 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
           animate={{
             opacity: 1,
             scale: 1,
-            top: targetRect.top + window.scrollY - 8,
-            left: targetRect.left + window.scrollX - 8,
+            top: targetRect.top - 8,
+            left: targetRect.left - 8,
             width: targetRect.width + 16,
             height: targetRect.height + 16,
           }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="absolute border-2 border-cyan-400/80 rounded-xl shadow-[0_0_15px_rgba(34,211,238,0.4)] pointer-events-none z-45"
+          className="fixed border-2 border-cyan-400/80 rounded-xl shadow-[0_0_15px_rgba(34,211,238,0.4)] pointer-events-none z-50"
         >
           <div className="absolute inset-0 border border-cyan-400/40 rounded-xl animate-ping opacity-40" />
         </motion.div>
@@ -316,7 +312,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
           left: cardCoords.left,
         }}
         transition={{ type: "spring", stiffness: 350, damping: 32 }}
-        className="absolute w-[340px] bg-slate-900/90 backdrop-blur-xl border border-slate-700/80 p-6 rounded-3xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] shadow-blue-500/10 pointer-events-auto z-50 flex flex-col gap-4 text-left select-none text-white"
+        className="fixed w-[340px] bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 p-6 rounded-3xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] shadow-blue-500/10 pointer-events-auto z-50 flex flex-col gap-4 text-left select-none text-white"
       >
         {showCelebration ? (
           <>
@@ -339,7 +335,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
 
             {/* Text Details */}
             <div>
-              <h4 className="text-base font-bold text-white mb-1.5">You're All Set! 🎉</h4>
+              <h4 className="text-base font-bold text-white mb-1.5">You&apos;re All Set! 🎉</h4>
               <p className="text-slate-300 text-xs leading-relaxed font-normal">
                 {tourKey === "landing"
                   ? "Generate a New Session or enter a Room Key to sync clipboard text and files instantly."
@@ -353,7 +349,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
                 onClick={handleComplete}
                 className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5 cursor-none"
               >
-                Let's Go!
+                Let&apos;s Go!
                 <ChevronRight className="w-4 h-4" />
               </button>
               <button

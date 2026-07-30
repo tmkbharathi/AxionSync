@@ -14,55 +14,47 @@ interface PerformanceContextType {
 const PerformanceContext = createContext<PerformanceContextType | undefined>(undefined);
 
 export function PerformanceProvider({ children }: { children: React.ReactNode }) {
-  const [isStaticBackground, setIsStaticBackgroundState] = useState(false);
-  const [disableCustomCursor, setDisableCustomCursorState] = useState(false);
-  const [detectedLowSpec, setDetectedLowSpec] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [detectedLowSpec] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const caps = getWebGLCapabilities();
+    return !caps.supported || !caps.hardwareAccelerated;
+  });
+
+  const [isStaticBackground, setIsStaticBackgroundState] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const savedStaticBg = localStorage.getItem("syncosync:static_background");
+    if (savedStaticBg !== null) return savedStaticBg === "true";
+    const caps = getWebGLCapabilities();
+    return !caps.supported || !caps.hardwareAccelerated;
+  });
+
+  const [disableCustomCursor, setDisableCustomCursorState] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const savedDisableCursor = localStorage.getItem("syncosync:disable_cursor");
+    if (savedDisableCursor !== null) return savedDisableCursor === "true";
+    return true;
+  });
 
   useEffect(() => {
-    // Only run on client
+    // Diagnostic logging
     const caps = getWebGLCapabilities();
-    const isLow = !caps.supported || !caps.hardwareAccelerated;
-    setDetectedLowSpec(isLow);
-
     console.log("[Performance Diagnostics]", {
       webglSupported: caps.supported,
       hardwareAccelerated: caps.hardwareAccelerated,
       renderer: caps.renderer,
-      isLowSpecDefault: isLow,
+      isLowSpecDefault: detectedLowSpec,
       savedStaticBg: localStorage.getItem("syncosync:static_background"),
       savedDisableCursor: localStorage.getItem("syncosync:disable_cursor")
     });
-
-    // Read manual overrides from localStorage
-    const savedStaticBg = localStorage.getItem("syncosync:static_background");
-    const savedDisableCursor = localStorage.getItem("syncosync:disable_cursor");
-
-    if (savedStaticBg !== null) {
-      setIsStaticBackgroundState(savedStaticBg === "true");
-    } else {
-      // Default to static background if low-spec
-      setIsStaticBackgroundState(isLow);
-    }
-
-    if (savedDisableCursor !== null) {
-      setDisableCustomCursorState(savedDisableCursor === "true");
-    } else {
-      // Default to disabling custom cursor if low-spec
-      setDisableCustomCursorState(isLow);
-    }
-
-    setIsInitialized(true);
-  }, []);
+  }, [detectedLowSpec]);
 
   useEffect(() => {
-    if (!isInitialized) return;
     if (disableCustomCursor) {
       document.documentElement.classList.add("no-custom-cursor");
     } else {
       document.documentElement.classList.remove("no-custom-cursor");
     }
-  }, [disableCustomCursor, isInitialized]);
+  }, [disableCustomCursor]);
 
   const setStaticBackground = (val: boolean) => {
     setIsStaticBackgroundState(val);
@@ -84,8 +76,7 @@ export function PerformanceProvider({ children }: { children: React.ReactNode })
         setDisableCustomCursor,
       }}
     >
-      {/* Prevent flash of standard styling before checking storage */}
-      {isInitialized ? children : <div className="fixed inset-0 bg-slate-950" />}
+      {children}
     </PerformanceContext.Provider>
   );
 }

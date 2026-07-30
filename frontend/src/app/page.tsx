@@ -3,24 +3,20 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { Copy, ArrowRight, Cloud, Shield, Zap, CheckCircle2, Heart, Lock, Unlock, ShieldCheck, Star, Crown, ChevronDown, Eye, EyeOff, X, Sparkles } from "lucide-react";
+import { Copy, ArrowRight, Cloud, Shield, Zap, CheckCircle2, Lock, Unlock, ShieldCheck, Eye, EyeOff, X, Sparkles } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
-import { useState, useRef, useMemo, useEffect, memo } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Points, PointMaterial } from "@react-three/drei";
+import { useState, useEffect, memo } from "react";
 import { siteConfig } from "@/config/site";
 import { Background3D } from "@/components/Background3D";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import PerformanceSettings from "@/components/PerformanceSettings";
-import { OnboardingTour, TourLauncher } from "@/components/OnboardingTour";
+import { OnboardingTour } from "@/components/OnboardingTour";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 // Admin Credentials
 const ADMIN_SESSION_ID = process.env.NEXT_PUBLIC_ADMIN_SESSION_ID;
-
-// 3D components removed (moved to shared components)
 
 // Tour Steps Configuration
 const LANDING_TOUR_STEPS = [
@@ -46,23 +42,33 @@ const LANDING_TOUR_STEPS = [
 function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [isListening, setIsListening] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [joinKey, setJoinKey] = useState("");
-  const [showThankYou, setShowThankYou] = useState(false);
-  const [isDeletedByOther, setIsDeletedByOther] = useState(false);
-  const [isNotFound, setIsNotFound] = useState(false);
+  const [showThankYou, setShowThankYou] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("status");
+    return status === "deleted" || status === "not_found";
+  });
+  const [isDeletedByOther, setIsDeletedByOther] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("status") === "deleted" && params.get("origin") === "other";
+  });
+  const [isNotFound, setIsNotFound] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("status") === "not_found";
+  });
 
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState(false);
   const [adminErrorMessage, setAdminErrorMessage] = useState<string | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
-  const [showE2eeDetails, setShowE2eeDetails] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
-  const [isProHovered, setIsProHovered] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const [isTourActive, setIsTourActive] = useState(false);
@@ -103,10 +109,6 @@ function Home() {
   useEffect(() => {
     const status = searchParams.get("status");
     if (status === "deleted" || status === "not_found") {
-      setShowThankYou(true);
-      setIsDeletedByOther(searchParams.get("origin") === "other");
-      setIsNotFound(status === "not_found");
-
       // Clean up the URL
       window.history.replaceState({}, '', '/');
 
@@ -149,12 +151,16 @@ function Home() {
       // Validate session exists on backend
       await axios.get(`${API_URL}/session/${key}`);
       router.push(`/${key}`);
-    } catch (err: any) {
-      if (err.response?.status !== 404) {
-        console.error("Join failed:", err);
-      }
-      if (err.response?.status === 404) {
-        setJoinError("Room not found");
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status !== 404) {
+          console.error("Join failed:", err);
+        }
+        if (err.response?.status === 404) {
+          setJoinError("Room not found");
+        } else {
+          setJoinError("Failed to connect");
+        }
       } else {
         setJoinError("Failed to connect");
       }
@@ -498,10 +504,10 @@ function Home() {
                     setIsUnlocking(false);
                     setTimeout(() => setAdminError(false), 2000);
                   }
-                } catch (err: any) {
+                } catch (err: unknown) {
                   setAdminError(true);
                   setIsUnlocking(false);
-                  if (err.response?.status === 429) {
+                  if (axios.isAxiosError(err) && err.response?.status === 429) {
                     setAdminErrorMessage(err.response?.data?.error || "Too many passcode unlock attempts. Please try again after 15 minutes.");
                   } else {
                     setAdminErrorMessage("Invalid passcode or expired link.");
@@ -606,9 +612,9 @@ function Home() {
               </div>
 
               <div>
-                <h4 className="text-base font-bold text-white mb-1.5">Welcome! Let's take a tour 👋</h4>
+                <h4 className="text-base font-bold text-white mb-1.5">Welcome! Let&apos;s take a tour 👋</h4>
                 <p className="text-slate-300 text-xs leading-relaxed font-normal">
-                  New to AxionSync? Let's take a 1-minute interactive tour to see how to sync your clipboard and files!
+                  New to AxionSync? Let&apos;s take a 1-minute interactive tour to see how to sync your clipboard and files!
                 </p>
               </div>
 
@@ -638,6 +644,12 @@ function Home() {
         )}
       </AnimatePresence>
 
+      <OnboardingTour
+        tourKey="landing"
+        steps={LANDING_TOUR_STEPS}
+        isActive={isTourActive}
+        onClose={() => setIsTourActive(false)}
+      />
     </div>
   );
 }

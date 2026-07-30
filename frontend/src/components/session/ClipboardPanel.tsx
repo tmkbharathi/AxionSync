@@ -2,9 +2,27 @@
 
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { Socket } from "socket.io-client";
-import { Mic, MicOff, Minus, Plus, CheckCircle, Copy, Lock, ShieldCheck } from "lucide-react";
+import { Mic, MicOff, Minus, Plus, CheckCircle, Copy, Lock } from "lucide-react";
 import { siteConfig } from "@/config/site";
 import { encryptText, decryptText } from "@/lib/crypto";
+
+interface SpeechRecognitionEvent {
+  resultIndex: number;
+  results: Array<{
+    isFinal: boolean;
+    0: { transcript: string };
+  }> & { length: number };
+}
+
+interface ISpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((e: SpeechRecognitionEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
 
 export const ClipboardPanel = memo(({ 
   sessionId, 
@@ -29,7 +47,7 @@ export const ClipboardPanel = memo(({
   const [isListening, setIsListening] = useState(false);
   const textRef = useRef("");
   const isLocalChange = useRef(false);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<ISpeechRecognition | null>(null);
 
   // Sync with initialText from parent (only for first load or remote updates)
   useEffect(() => {
@@ -75,13 +93,14 @@ export const ClipboardPanel = memo(({
 
   // Setup Speech Recognition
   useEffect(() => {
-    if (typeof window !== "undefined" && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
-      const SpeechReg = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const win = typeof window !== "undefined" ? (window as unknown as Record<string, unknown>) : {};
+    const SpeechReg = (win.SpeechRecognition || win.webkitSpeechRecognition) as { new (): ISpeechRecognition } | undefined;
+    if (SpeechReg) {
       recognitionRef.current = new SpeechReg();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
       
-      recognitionRef.current.onresult = (e: any) => {
+      recognitionRef.current.onresult = (e: SpeechRecognitionEvent) => {
         let finalTranscript = '';
         for (let i = e.resultIndex; i < e.results.length; ++i) {
           if (e.results[i].isFinal) {

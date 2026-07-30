@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, use, useCallback } from "react";
+import { useEffect, useState, use, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
@@ -8,14 +8,14 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { v4 as uuidv4 } from "uuid";
 import { 
-  X, Monitor, LogOut, Trash2, Lock, Unlock, Cloud, AlertTriangle, 
-  Copy, CheckCircle, ChevronsLeft, ChevronsRight, Smartphone,
+  X, Monitor, Trash2, Lock, Unlock, Cloud, AlertTriangle, 
+  Copy, CheckCircle, ChevronsLeft, ChevronsRight,
   Sparkles, ArrowRight, Clock, Home
 } from "lucide-react";
 
 import { siteConfig } from "@/config/site";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { OnboardingTour } from "@/components/OnboardingTour";
+import { OnboardingTour, TourStep } from "@/components/OnboardingTour";
 import PerformanceSettings from "@/components/PerformanceSettings";
 
 // Import modular components & types
@@ -29,14 +29,12 @@ import { ShareAdminModal } from "@/components/session/ShareAdminModal";
 import { encryptFile, decryptFile } from "@/lib/crypto";
 
 // Dynamic imports for heavy components
-const Background3D = dynamic(() => import("@/components/Background3D").then(mod => mod.Background3D), { 
-  ssr: false,
-  loading: () => <div className="fixed inset-0 bg-slate-950" /> 
-});
 const QRCodeSVG = dynamic(() => import("qrcode.react").then(mod => mod.QRCodeSVG), { ssr: false });
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+
 
 // Read Blob/File as ArrayBuffer with fallback for older browsers (e.g. LG WebOS browser)
 const readArrayBuffer = async (blob: Blob): Promise<ArrayBuffer> => {
@@ -429,7 +427,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         });
       }
     });
-    newSocket.on("passcode_permissions_updated", ({ permissions }: { permissions: any }) => {
+    newSocket.on("passcode_permissions_updated", ({ permissions }: { permissions: { allowText?: boolean; allowFiles?: boolean; allowUploads?: boolean } }) => {
       if (!isMasterAdmin && permissions) {
         setPermissions(permissions);
         const token = sessionStorage.getItem(`syncosync:auth:${ADMIN_SESSION_ID}`);
@@ -743,9 +741,9 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                   setAdminAuthError(true);
                   setTimeout(() => setAdminAuthError(false), 2000);
                 }
-              } catch (err: any) {
+              } catch (err: unknown) {
                 setAdminAuthError(true);
-                if (err.response?.status === 401) {
+                if (axios.isAxiosError(err) && err.response?.status === 401) {
                   setShowPasscodeExpiredModal(true);
                 }
                 setTimeout(() => setAdminAuthError(false), 2000);
@@ -799,7 +797,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           </div>
           <h1 className="text-2xl font-bold mb-3">Connection Error</h1>
           <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-            We couldn't verify the session. It may have expired or there's a temporary connection issue.
+            We couldn&apos;t verify the session. It may have expired or there&apos;s a temporary connection issue.
           </p>
           <button 
             onClick={() => window.location.href = '/'}
@@ -1098,7 +1096,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
               <div>
                 <h4 className="text-base font-bold text-white mb-1.5">Welcome to your Sync Room! 🚀</h4>
                 <p className="text-slate-300 text-xs leading-relaxed font-normal">
-                  Let's take a 1-minute interactive tour to understand how to use this clipboard sync and file sharing workspace!
+                  Let&apos;s take a 1-minute interactive tour to understand how to use this clipboard sync and file sharing workspace!
                 </p>
               </div>
 
@@ -1194,6 +1192,12 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
         )}
       </AnimatePresence>
 
+      <OnboardingTour
+        tourKey="session"
+        steps={SESSION_TOUR_STEPS}
+        isActive={isTourActive}
+        onClose={() => setIsTourActive(false)}
+      />
     </div>
   );
 }

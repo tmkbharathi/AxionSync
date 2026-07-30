@@ -84,9 +84,10 @@ export function ShareAdminModal({
       const passcodes = res.data.passcodes || [];
       setActivePasscodes(passcodes);
       onPasscodesCountChange?.(passcodes.length);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to fetch share passcodes:", err);
-      setError(err.response?.data?.error || "Failed to load active passcodes.");
+      const msg = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+      setError(msg || "Failed to load active passcodes.");
     }
   }, [apiUrl, sessionId, token, onPasscodesCountChange]);
 
@@ -163,9 +164,10 @@ export function ShareAdminModal({
       
       // Transition to Step 2 (Active view with live timer)
       setStep("active");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to create passcode:", err);
-      setError(err.response?.data?.error || "Failed to create share passcode.");
+      const msg = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+      setError(msg || "Failed to create share passcode.");
     } finally {
       setLoading(false);
     }
@@ -182,7 +184,7 @@ export function ShareAdminModal({
       if (newlyCreated?.passcode === code) {
         setNewlyCreated(null);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to revoke passcode:", err);
       setError("Failed to revoke passcode.");
     }

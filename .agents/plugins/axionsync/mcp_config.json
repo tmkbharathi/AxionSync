@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "axionsync": {
+      "command": "cmd.exe",
+      "args": [
+        "/c",
+        "npm",
+        "--silent",
+        "--prefix",
+        "frontend",
+        "run",
+        "mcp"
+      ],
+      "env": {
+        "BACKEND_API_URL": "http://localhost:3001"
+      }
+    }
+  }
+}

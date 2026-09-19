@@ -120,7 +120,7 @@ function Home() {
 
   const handleStart = async () => {
     setIsGenerating(true);
-    const sessionId = uuidv4().slice(0, 8); // Generate ID once
+    const sessionId = uuidv4().slice(0, 8).toUpperCase(); // Generate ID in capital letters
     try {
       // Initialize the session on the backend to mark it as active
       await axios.post(`${API_URL}/session/${sessionId}/init`);
@@ -135,18 +135,21 @@ function Home() {
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const key = joinKey.trim().toLowerCase();
-    if (!key) return;
+    const rawKey = joinKey.trim();
+    if (!rawKey) return;
 
     setIsJoining(true);
     setJoinError(null);
 
     try {
-      if (key === ADMIN_SESSION_ID) {
+      if (ADMIN_SESSION_ID && (rawKey === ADMIN_SESSION_ID || rawKey.toLowerCase() === ADMIN_SESSION_ID.toLowerCase())) {
         setShowAdminModal(true);
         setIsJoining(false);
         return;
       }
+
+      // Convert standard session key to uppercase
+      const key = rawKey.toUpperCase();
 
       // Validate session exists on backend
       await axios.get(`${API_URL}/session/${key}`);

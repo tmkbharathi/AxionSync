@@ -4,6 +4,14 @@ const controller = require("../controllers/sessionController");
 function getSessionRouter(io) {
   const router = express.Router();
 
+  // Normalize standard session IDs to uppercase
+  router.param("sessionId", (req, res, next, sessionId) => {
+    if (sessionId && sessionId !== process.env.ADMIN_SESSION_ID) {
+      req.params.sessionId = sessionId.toUpperCase();
+    }
+    next();
+  });
+
   // Unlock passcode
   router.post("/session/:sessionId/unlock", controller.unlockSession);
 

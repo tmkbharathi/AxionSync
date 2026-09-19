@@ -206,8 +206,17 @@ const SESSION_TOUR_STEPS = [
 ];
 
 export default function SessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
-  const { sessionId } = use(params);
+  const { sessionId: rawSessionId } = use(params);
   const router = useRouter();
+
+  const isReservedAdmin = rawSessionId === ADMIN_SESSION_ID;
+  const sessionId = isReservedAdmin ? rawSessionId : rawSessionId?.toUpperCase();
+
+  useEffect(() => {
+    if (!isReservedAdmin && rawSessionId && rawSessionId !== rawSessionId.toUpperCase()) {
+      router.replace(`/${rawSessionId.toUpperCase()}`);
+    }
+  }, [rawSessionId, isReservedAdmin, router]);
   
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);

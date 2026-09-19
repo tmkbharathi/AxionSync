@@ -3,7 +3,8 @@ const { redis, ALL_SESSIONS_KEY } = require("../config/redis");
 const { getStorageClientAndBucket } = require("../config/storage");
 
 function registerSessionHandlers(io, socket) {
-  socket.on("join_session", async ({ sessionId, token, deviceInfo, persistentDeviceId }) => {
+  socket.on("join_session", async ({ sessionId: rawSessionId, token, deviceInfo, persistentDeviceId }) => {
+    const sessionId = (rawSessionId && rawSessionId !== process.env.ADMIN_SESSION_ID) ? rawSessionId.toUpperCase() : rawSessionId;
     const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
     // Security validation: Require token for joining the admin session WebSocket
@@ -85,7 +86,8 @@ function registerSessionHandlers(io, socket) {
     io.to(sessionId).emit("room_size", devices.length);
   });
 
-  socket.on("update_text", async ({ sessionId, content }) => {
+  socket.on("update_text", async ({ sessionId: rawSessionId, content }) => {
+    const sessionId = (rawSessionId && rawSessionId !== process.env.ADMIN_SESSION_ID) ? rawSessionId.toUpperCase() : rawSessionId;
     const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
     if (isAdminSession && socket.permissions) {
@@ -114,7 +116,8 @@ function registerSessionHandlers(io, socket) {
     socket.to(sessionId).emit("text_updated", { content: normalized });
   });
 
-  socket.on("delete_file", async ({ sessionId, file }) => {
+  socket.on("delete_file", async ({ sessionId: rawSessionId, file }) => {
+    const sessionId = (rawSessionId && rawSessionId !== process.env.ADMIN_SESSION_ID) ? rawSessionId.toUpperCase() : rawSessionId;
     const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
     if (isAdminSession && socket.permissions) {

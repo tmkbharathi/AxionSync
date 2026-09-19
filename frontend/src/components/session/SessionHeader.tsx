@@ -88,9 +88,9 @@ export const SessionHeader = memo(({
           <div className="flex items-center gap-2">
             <h1 className="font-bold text-lg hidden sm:block">Devices</h1>
           </div>
-          <div className="text-xs text-slate-400 flex items-center gap-1 sm:gap-2 whitespace-nowrap">
+          <div id="tour-presence" className="text-xs text-slate-400 flex items-center gap-1 sm:gap-2 whitespace-nowrap">
             <span className={`w-2 h-2 rounded-full shrink-0 ${connected ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
-            <div id="tour-presence" className="flex items-center gap-1">
+            <div className="flex items-center gap-1">
               <span>
                 {connected ? (
                   <>

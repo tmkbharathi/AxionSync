@@ -146,8 +146,9 @@ export const FileManagerPanel = memo(({
                 <span className="text-xs text-slate-400 px-2.5 bg-slate-800 rounded-full flex items-center h-[24px]">{files.length} items</span>
               </div>
             </div>
-            {!isReadOnly && (
-              <div id="tour-files" onDrop={onDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} className="relative">
+            <div id="tour-files">
+              {!isReadOnly && (
+                <div onDrop={onDrop} onDragOver={e => { e.preventDefault(); setIsDragOver(true); }} onDragLeave={() => setIsDragOver(false)} className="relative">
                 <input 
                   id="file-upload-input"
                   type="file" 
@@ -195,6 +196,7 @@ export const FileManagerPanel = memo(({
                 </label>
               </div>
             )}
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar space-y-3">
             {files.length === 0 ? (

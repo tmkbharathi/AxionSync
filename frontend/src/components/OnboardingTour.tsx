@@ -82,71 +82,86 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
     }
   }, []);
 
-  // Monitor target elements and calculate positions
+  // Scroll active target into view ONCE when step changes
   useEffect(() => {
-    if (!isActive || steps.length === 0 || showCelebration) {
-      const frameId = requestAnimationFrame(() => setTargetRect(null));
-      return () => cancelAnimationFrame(frameId);
-    }
+    if (!isActive || !activeStep?.targetId || showCelebration) return;
 
-    const updatePosition = () => {
-      if (!activeStep) return;
+    const timer = setTimeout(() => {
+      const el = document.getElementById(activeStep.targetId!);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const isVisible =
+          rect.top >= 0 &&
+          rect.left >= 0 &&
+          rect.bottom <= window.innerHeight &&
+          rect.right <= window.innerWidth;
 
-      if (activeStep.targetId) {
-        const element = document.getElementById(activeStep.targetId);
-        if (element) {
-          const rect = element.getBoundingClientRect();
-
-          // If element has no size (e.g. tab transition or display:none), don't set invalid targetRect yet
-          if (rect.width === 0 || rect.height === 0) {
-            setTargetRect(null);
-            return;
-          }
-
-          // Scroll element into view if not fully visible
-          const isVisible =
-            rect.top >= 0 &&
-            rect.left >= 0 &&
-            rect.bottom <= window.innerHeight &&
-            rect.right <= window.innerWidth;
-
-          if (!isVisible) {
-            element.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
-
-          // Fetch updated bounds
-          const updatedRect = element.getBoundingClientRect();
-          setTargetRect(updatedRect);
-          return;
+        if (!isVisible) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       }
-      setTargetRect(null);
+    }, 80);
+
+    return () => clearTimeout(timer);
+  }, [currentStepIdx, isActive, activeStep?.targetId, showCelebration]);
+
+  // Continuously measure target element bounds accurately using RAF while tour step is active
+  useEffect(() => {
+    if (!isActive || !activeStep?.targetId || showCelebration) {
+      const timer = setTimeout(() => setTargetRect(null), 0);
+      return () => clearTimeout(timer);
+    }
+
+    let rafId: number;
+
+    const measure = () => {
+      const el = document.getElementById(activeStep.targetId!);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          setTargetRect((prev) => {
+            if (
+              prev &&
+              Math.abs(prev.left - rect.left) < 0.5 &&
+              Math.abs(prev.top - rect.top) < 0.5 &&
+              Math.abs(prev.width - rect.width) < 0.5 &&
+              Math.abs(prev.height - rect.height) < 0.5
+            ) {
+              return prev;
+            }
+            return rect;
+          });
+        } else {
+          setTargetRect(null);
+        }
+      } else {
+        setTargetRect(null);
+      }
     };
 
-    // Run immediately and setup scroll/resize handlers + delayed retries
-    updatePosition();
-    
-    const timer1 = setTimeout(updatePosition, 50);
-    const timer2 = setTimeout(updatePosition, 150);
-    const timer3 = setTimeout(updatePosition, 300);
+    const loop = () => {
+      measure();
+      rafId = requestAnimationFrame(loop);
+    };
 
-    window.addEventListener("scroll", updatePosition, { passive: true });
-    window.addEventListener("resize", updatePosition);
+    loop();
+
+    window.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
 
     return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
-      window.removeEventListener("scroll", updatePosition);
-      window.removeEventListener("resize", updatePosition);
+      cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
     };
-  }, [currentStepIdx, isActive, activeStep, windowSize, showCelebration, steps.length]);
+  }, [currentStepIdx, isActive, activeStep?.targetId, showCelebration]);
 
-  // Position the card near the highlighted element
+  // Position the card near the highlighted element with smart viewport fallbacks
   useEffect(() => {
     if (!isActive || (!activeStep && !showCelebration)) return;
 
     const margin = 16;
+    const padding = 16;
     const cardWidth = cardRef.current?.offsetWidth || 340;
     const cardHeight = cardRef.current?.offsetHeight || 220;
 
@@ -156,10 +171,29 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
     if (targetRect && !showCelebration) {
       let position = activeStep.position || "bottom";
 
-      // On mobile screens (<768px), fallback "left" or "right" to "bottom" or "top"
+      // Mobile fallback (<768px): convert left/right to bottom/top
       if (window.innerWidth < 768 && (position === "left" || position === "right")) {
         const spaceBelow = window.innerHeight - targetRect.bottom;
         position = spaceBelow >= cardHeight + margin ? "bottom" : "top";
+      }
+
+      // Check space availability & smart fallback
+      if (position === "left" && targetRect.left - cardWidth - margin < padding) {
+        if (window.innerWidth - targetRect.right >= cardWidth + margin + padding) {
+          position = "right";
+        } else {
+          position = window.innerHeight - targetRect.bottom >= cardHeight + margin ? "bottom" : "top";
+        }
+      } else if (position === "right" && window.innerWidth - targetRect.right < cardWidth + margin + padding) {
+        if (targetRect.left - cardWidth - margin >= padding) {
+          position = "left";
+        } else {
+          position = window.innerHeight - targetRect.bottom >= cardHeight + margin ? "bottom" : "top";
+        }
+      } else if (position === "top" && targetRect.top - cardHeight - margin < padding) {
+        position = "bottom";
+      } else if (position === "bottom" && window.innerHeight - targetRect.bottom < cardHeight + margin + padding) {
+        position = "top";
       }
 
       switch (position) {
@@ -187,8 +221,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
       }
     }
 
-    // Viewport clamping (keep card fully on-screen relative to viewport)
-    const padding = 16;
+    // Viewport clamping
     const minLeft = padding;
     const maxLeft = Math.max(padding, window.innerWidth - cardWidth - padding);
     const minTop = padding;
@@ -326,7 +359,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
               </div>
               <button
                 onClick={handleClose}
-                className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 rounded-full transition-all cursor-none"
+                className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 rounded-full transition-all cursor-pointer"
                 aria-label="Close tour"
               >
                 <X className="w-4 h-4" />
@@ -347,14 +380,14 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
             <div className="mt-2 flex flex-col gap-3">
               <button
                 onClick={handleComplete}
-                className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5 cursor-none"
+                className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 Let&apos;s Go!
                 <ChevronRight className="w-4 h-4" />
               </button>
               <button
                 onClick={handleBack}
-                className="text-center text-[10px] text-slate-500 hover:text-slate-300 font-semibold transition-colors cursor-none py-1"
+                className="text-center text-[10px] text-slate-500 hover:text-slate-300 font-semibold transition-colors cursor-pointer py-1"
               >
                 Go Back to Tour
               </button>
@@ -372,7 +405,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
               </div>
               <button
                 onClick={handleClose}
-                className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 rounded-full transition-all cursor-none"
+                className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 rounded-full transition-all cursor-pointer"
                 aria-label="Close tour"
               >
                 <X className="w-4 h-4" />
@@ -405,7 +438,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
               <div className="flex items-center justify-between">
                 <button
                   onClick={handleClose}
-                  className="text-[11px] font-bold text-slate-400 hover:text-slate-200 cursor-none px-2 py-1 rounded transition-colors"
+                  className="text-[11px] font-bold text-slate-400 hover:text-slate-200 cursor-pointer px-2 py-1 rounded transition-colors"
                 >
                   Skip Tour
                 </button>
@@ -414,7 +447,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
                   {currentStepIdx > 0 && (
                     <button
                       onClick={handleBack}
-                      className="p-2 border border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl transition-all flex items-center justify-center cursor-none"
+                      className="p-2 border border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl transition-all flex items-center justify-center cursor-pointer"
                       aria-label="Back"
                     >
                       <ChevronLeft className="w-4 h-4" />
@@ -423,7 +456,7 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
                   
                   <button
                     onClick={handleNext}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center gap-1 cursor-none"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center gap-1 cursor-pointer"
                   >
                     {currentStepIdx === steps.length - 1 ? "Finish" : "Next"}
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -450,7 +483,7 @@ export function TourLauncher({ onStartTour }: TourLauncherProps) {
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}
       onClick={onStartTour}
-      className="fixed bottom-6 right-6 z-30 p-3 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-blue-500/30 backdrop-blur-md shadow-2xl text-slate-400 hover:text-blue-400 transition-all flex items-center gap-2 cursor-none"
+      className="fixed bottom-6 right-6 z-30 p-3 rounded-full bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-blue-500/30 backdrop-blur-md shadow-2xl text-slate-400 hover:text-blue-400 transition-all flex items-center gap-2 cursor-pointer"
       title="Start Interactive Tutorial"
     >
       <HelpCircle className="w-5 h-5" />

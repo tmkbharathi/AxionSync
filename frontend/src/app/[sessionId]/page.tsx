@@ -206,8 +206,17 @@ const SESSION_TOUR_STEPS = [
 ];
 
 export default function SessionPage({ params }: { params: Promise<{ sessionId: string }> }) {
-  const { sessionId } = use(params);
+  const { sessionId: rawSessionId } = use(params);
   const router = useRouter();
+
+  const isReservedAdmin = rawSessionId === ADMIN_SESSION_ID;
+  const sessionId = isReservedAdmin ? rawSessionId : rawSessionId?.toUpperCase();
+
+  useEffect(() => {
+    if (!isReservedAdmin && rawSessionId && rawSessionId !== rawSessionId.toUpperCase()) {
+      router.replace(`/${rawSessionId.toUpperCase()}`);
+    }
+  }, [rawSessionId, isReservedAdmin, router]);
   
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
@@ -1086,7 +1095,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                     localStorage.setItem("syncosync:tour:session", "completed");
                     setShowTourBanner(false);
                   }}
-                  className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 rounded-full transition-all cursor-none"
+                  className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-800/80 rounded-full transition-all cursor-pointer"
                   aria-label="Close modal"
                 >
                   <X className="w-4 h-4" />
@@ -1106,7 +1115,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                     setIsTourActive(true);
                     setShowTourBanner(false);
                   }}
-                  className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5 cursor-none"
+                  className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   Start Tour
                   <ArrowRight className="w-4 h-4" />
@@ -1116,7 +1125,7 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
                     localStorage.setItem("syncosync:tour:session", "completed");
                     setShowTourBanner(false);
                   }}
-                  className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-none"
+                  className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
                   Dismiss
                 </button>
@@ -1191,13 +1200,6 @@ export default function SessionPage({ params }: { params: Promise<{ sessionId: s
           </motion.div>
         )}
       </AnimatePresence>
-
-      <OnboardingTour
-        tourKey="session"
-        steps={SESSION_TOUR_STEPS}
-        isActive={isTourActive}
-        onClose={() => setIsTourActive(false)}
-      />
     </div>
   );
 }

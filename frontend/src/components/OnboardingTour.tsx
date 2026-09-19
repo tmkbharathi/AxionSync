@@ -108,8 +108,8 @@ export function OnboardingTour({ tourKey, steps, isActive, onClose, onStepChange
   // Continuously measure target element bounds accurately using RAF while tour step is active
   useEffect(() => {
     if (!isActive || !activeStep?.targetId || showCelebration) {
-      setTargetRect(null);
-      return;
+      const timer = setTimeout(() => setTargetRect(null), 0);
+      return () => clearTimeout(timer);
     }
 
     let rafId: number;

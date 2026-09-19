@@ -22,6 +22,15 @@ function getSessionRouter(io) {
   // Init route
   router.post("/session/:sessionId/init", controller.initSession);
 
+  // Text route
+  router.put("/session/:sessionId/text", (req, res) => controller.updateSessionText(req, res, io));
+
+  // Direct file delete route
+  router.delete("/session/:sessionId/files/:fileId", (req, res) => controller.deleteSessionFile(req, res, io));
+
+  // Direct upload route
+  router.post("/session/:sessionId/upload/raw", (req, res) => controller.uploadRawFile(req, res, io));
+
   // Share Expiring Passcode routes
   router.post("/session/:sessionId/share/create-passcode", controller.createSharePasscode);
   router.get("/session/:sessionId/share/passcodes", controller.listSharePasscodes);

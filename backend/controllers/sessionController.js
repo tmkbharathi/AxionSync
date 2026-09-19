@@ -264,14 +264,14 @@ async function deleteSession(req, res, io) {
 
     const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
 
-    // Security validation: Require token for the admin session deletion
+    // Security validation: Require master token for the admin session deletion
     if (isAdminSession) {
       const authHeader = req.headers.authorization;
       const token = authHeader && authHeader.split(" ")[1];
-      const isValid = await verifyAdminToken(sessionId, token);
+      const isValid = await verifyMasterAdminToken(sessionId, token);
 
       if (!isValid) {
-        return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+        return res.status(401).json({ error: "Unauthorized access. Master admin token required." });
       }
     }
 
@@ -799,6 +799,239 @@ async function updateSharePasscodePermissions(req, res, io) {
   res.json({ success: true, code, permissions: newPermissions });
 }
 
+// Update Session Text
+async function updateSessionText(req, res, io) {
+  const { sessionId } = req.params;
+  const { content = "" } = req.body;
+
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+  if (isAdminSession) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(" ")[1];
+    const isValid = await verifyAdminToken(sessionId, token);
+
+    if (!isValid) {
+      return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+    }
+
+    const perms = await getTokenPermissions(sessionId, token);
+    if (perms.allowText === false || perms.allowUploads === false) {
+      return res.status(403).json({ error: "Text editing is disabled for this guest passcode." });
+    }
+  }
+
+  try {
+    const normalized = String(content).replace(/\r\n/g, "\n");
+    const textKey = `session:${sessionId}:text`;
+    const activeKey = `session:${sessionId}:active`;
+    const lastActiveKey = `session:${sessionId}:last_active`;
+
+    const activeExpiry = isAdminSession ? 86400 * 365 : 86400;      // 1 year or 24 hours
+    const metadataExpiry = isAdminSession ? 86400 * 365 : 86400 * 2; // 1 year or 48 hours
+
+    await redis.pipeline()
+      .set(textKey, normalized, "EX", metadataExpiry)
+      .expire(activeKey, activeExpiry)
+      .set(lastActiveKey, Date.now().toString())
+      .sadd(ALL_SESSIONS_KEY, sessionId)
+      .exec();
+
+    if (io) {
+      io.to(sessionId).emit("text_updated", { content: normalized });
+    }
+
+    res.json({ success: true, text: normalized });
+  } catch (err) {
+    console.error(`Failed to update text for session ${sessionId}:`, err);
+    res.status(500).json({ error: "Failed to update session text" });
+  }
+}
+
+// Delete Session File
+async function deleteSessionFile(req, res, io) {
+  const { sessionId, fileId } = req.params;
+
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+  if (isAdminSession) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(" ")[1];
+    const isValid = await verifyAdminToken(sessionId, token);
+
+    if (!isValid) {
+      return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+    }
+
+    const perms = await getTokenPermissions(sessionId, token);
+    if (perms.allowFiles === false || perms.allowUploads === false) {
+      return res.status(403).json({ error: "File operations are disabled for this guest passcode." });
+    }
+  }
+
+  try {
+    const filesKey = `session:${sessionId}:files`;
+    const filesRaw = await redis.lrange(filesKey, 0, -1);
+    
+    let targetFile = null;
+    let targetFileStr = null;
+    for (const f of filesRaw) {
+      try {
+        const parsed = JSON.parse(f);
+        if (parsed.id === fileId) {
+          targetFile = parsed;
+          targetFileStr = f;
+          break;
+        }
+      } catch (e) {}
+    }
+
+    if (!targetFile) {
+      return res.status(404).json({ error: "File not found in session" });
+    }
+
+    // Verify S3 key path structure
+    if (!targetFile.s3Key || !targetFile.s3Key.startsWith(`${sessionId}/`)) {
+      return res.status(400).json({ error: "Invalid file storage reference." });
+    }
+
+    const { client, bucket } = getStorageClientAndBucket(sessionId);
+    await client.send(new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: targetFile.s3Key
+    })).catch(err => console.error("S3 delete failed:", err));
+
+    await redis.lrem(filesKey, 1, targetFileStr);
+    await redis.set(`session:${sessionId}:last_active`, Date.now().toString());
+
+    if (io) {
+      io.to(sessionId).emit("file_deleted", fileId);
+    }
+
+    res.json({ success: true, fileId });
+  } catch (err) {
+    console.error(`Failed to delete file ${fileId} for session ${sessionId}:`, err);
+    res.status(500).json({ error: "Failed to delete file" });
+  }
+}
+
+// Upload Raw Text / Buffer File
+async function uploadRawFile(req, res, io) {
+  const { sessionId } = req.params;
+  const { fileName, content, mimeType = "text/plain" } = req.body;
+
+  if (!fileName || content === undefined || content === null) {
+    return res.status(400).json({ error: "Missing required fields: fileName and content" });
+  }
+
+  // Prevent path traversal
+  if (fileName.includes("..") || fileName.includes("/") || fileName.includes("\\")) {
+    return res.status(400).json({ error: "Invalid filename: path traversal characters detected" });
+  }
+
+  const isAdminSession = sessionId === process.env.ADMIN_SESSION_ID;
+  if (isAdminSession) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(" ")[1];
+    const isValid = await verifyAdminToken(sessionId, token);
+
+    if (!isValid) {
+      return res.status(401).json({ error: "Unauthorized access. Passcode required." });
+    }
+
+    const perms = await getTokenPermissions(sessionId, token);
+    if (perms.allowFiles === false || perms.allowUploads === false) {
+      return res.status(403).json({ error: "File uploads are disabled for this guest passcode." });
+    }
+  }
+
+  try {
+    const fileBuffer = Buffer.from(content, typeof content === "string" ? "utf-8" : undefined);
+    const fileSize = fileBuffer.length;
+
+    const maxFileSize = isAdminSession ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
+    if (fileSize > maxFileSize) {
+      return res.status(400).json({ error: `File size exceeds the limit of ${isAdminSession ? "1GB" : "50MB"}.` });
+    }
+
+    const filesKey = `session:${sessionId}:files`;
+    const currentFilesCount = await redis.llen(filesKey);
+    const maxFilesCount = isAdminSession ? 100 : 20;
+    if (currentFilesCount >= maxFilesCount) {
+      return res.status(400).json({ error: `Session file limit (${maxFilesCount}) reached. Please delete old files.` });
+    }
+
+    const existingFilesRaw = await redis.lrange(filesKey, 0, -1);
+    const existingFiles = existingFilesRaw.map(f => {
+      try { return JSON.parse(f); } catch { return null; }
+    }).filter(Boolean);
+    const totalExistingSize = existingFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+    const maxTotalStorage = isAdminSession ? 1024 * 1024 * 1024 : 50 * 1024 * 1024;
+
+    if (totalExistingSize + fileSize > maxTotalStorage) {
+      return res.status(400).json({ error: `Session total storage limit (${isAdminSession ? "1GB" : "50MB"}) reached. Please delete old files.` });
+    }
+
+    const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+    if (existingFiles.some(f => f.hash === hash)) {
+      return res.status(409).json({ error: "File with identical content already exists in this session." });
+    }
+
+    const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const fileId = `${Date.now()}-${safeFileName}`;
+    const s3Key = `${sessionId}/${fileId}`;
+
+    const { client, bucket } = getStorageClientAndBucket(sessionId);
+    const { PutObjectCommand } = require("@aws-sdk/client-s3");
+    await client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: s3Key,
+      Body: fileBuffer,
+      ContentType: mimeType,
+    }));
+
+    const fileMeta = {
+      id: fileId,
+      name: safeFileName,
+      size: fileSize,
+      mimeType,
+      uploadedAt: Date.now(),
+      s3Key,
+      hash,
+    };
+
+    if (fileMeta.mimeType.startsWith("image/")) {
+      try {
+        const command = new GetObjectCommand({ Bucket: bucket, Key: fileMeta.s3Key });
+        fileMeta.previewUrl = await getSignedUrl(client, command, { expiresIn: 86400 });
+        fileMeta.previewUrlExpiresAt = Date.now() + (86400 * 1000);
+      } catch (e) {}
+    }
+
+    const activeExpiry = isAdminSession ? 86400 * 365 : 86400;      // 1 year or 24 hours
+    const metadataExpiry = isAdminSession ? 86400 * 365 : 86400 * 2; // 1 year or 48 hours
+
+    await redis.lpush(filesKey, JSON.stringify(fileMeta));
+    await redis.expire(filesKey, metadataExpiry);
+
+    const textKey = `session:${sessionId}:text`;
+    const activeKey = `session:${sessionId}:active`;
+    await Promise.all([
+      redis.expire(textKey, metadataExpiry),
+      redis.expire(activeKey, activeExpiry),
+      redis.set(`session:${sessionId}:last_active`, Date.now().toString()),
+      redis.sadd(ALL_SESSIONS_KEY, sessionId)
+    ]);
+
+    if (io) {
+      io.to(sessionId).emit("file_uploaded", fileMeta);
+    }
+
+    res.json({ success: true, file: fileMeta });
+  } catch (err) {
+    console.error("uploadRawFile error:", err);
+    res.status(500).json({ error: "Failed to upload file content" });
+  }
+}
+
 module.exports = {
   unlockSession,
   getSession,
@@ -810,5 +1043,8 @@ module.exports = {
   createSharePasscode,
   listSharePasscodes,
   revokeSharePasscode,
-  updateSharePasscodePermissions
+  updateSharePasscodePermissions,
+  updateSessionText,
+  deleteSessionFile,
+  uploadRawFile
 };

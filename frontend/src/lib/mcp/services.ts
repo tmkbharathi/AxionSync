@@ -1,10 +1,13 @@
 import axios, { AxiosError } from "axios";
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
 
 // Environment variable resolution for backend API
 const API_URL = (
   process.env.BACKEND_API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:3001"
+  "https://syncosync.onrender.com"
 ).replace(/\/$/, "");
 
 export interface SessionPermissions {
@@ -260,6 +263,75 @@ export async function uploadTextFile(
   return {
     success: true,
     file: response.data.file,
+  };
+}
+
+// 7b. Upload Local Binary / Any File (PDF, Images, Audio, Zip, Docs, etc.)
+export async function uploadLocalFile(
+  sessionId: string,
+  filePath: string,
+  token?: string
+): Promise<{ success: boolean; file: SessionFile }> {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`File not found at path: ${filePath}`);
+  }
+
+  const fileBuffer = fs.readFileSync(filePath);
+  const fileName = path.basename(filePath);
+  const fileSize = fileBuffer.length;
+  const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+
+  let mimeType = "application/octet-stream";
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".pdf") mimeType = "application/pdf";
+  else if (ext === ".png") mimeType = "image/png";
+  else if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
+  else if (ext === ".webp") mimeType = "image/webp";
+  else if (ext === ".gif") mimeType = "image/gif";
+  else if (ext === ".mp4") mimeType = "video/mp4";
+  else if (ext === ".zip") mimeType = "application/zip";
+  else if (ext === ".json") mimeType = "application/json";
+  else if (ext === ".txt" || ext === ".md") mimeType = "text/plain";
+
+  // 1. Presign
+  const presignRes = await axios.post(
+    `${API_URL}/session/${encodeURIComponent(sessionId)}/upload/presign`,
+    {
+      fileName,
+      fileSize,
+      mimeType: "application/octet-stream",
+    },
+    { headers: getAuthHeaders(token) }
+  );
+
+  const { uploadUrl, fileId, s3Key } = presignRes.data;
+
+  // 2. PUT directly to S3/R2 storage
+  await axios.put(uploadUrl, fileBuffer, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  });
+
+  // 3. Confirm upload
+  const confirmRes = await axios.post(
+    `${API_URL}/session/${encodeURIComponent(sessionId)}/upload/confirm`,
+    {
+      fileId,
+      name: fileName,
+      size: fileSize,
+      mimeType,
+      s3Key,
+      hash,
+    },
+    { headers: getAuthHeaders(token) }
+  );
+
+  return {
+    success: true,
+    file: confirmRes.data,
   };
 }
 

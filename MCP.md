@@ -73,7 +73,7 @@ If you prefer to configure it globally in `~/.gemini/config/mcp_config.json`:
         "C:\\Users\\Manikanda Bharathi\\Desktop\\Project\\syncOsync\\frontend\\src\\lib\\mcp\\cli.ts"
       ],
       "env": {
-        "BACKEND_API_URL": "http://localhost:3001"
+        "BACKEND_API_URL": "https://syncosync.onrender.com"
       }
     }
   }

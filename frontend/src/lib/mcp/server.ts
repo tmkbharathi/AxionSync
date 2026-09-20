@@ -57,6 +57,51 @@ export function createAxionSyncMcpServer(): McpServer {
   // MCP TOOLS
   // ==========================================
 
+  // 0. create_session / create_new_session
+  server.tool(
+    "create_session",
+    "Create and initialize a brand-new live AxionSync digital workspace session. Optionally provide a custom room ID and initial clipboard text.",
+    {
+      customSessionId: z.string().optional().describe("Optional custom room ID (e.g. 'TEAM-SYNC'). If omitted, an 8-character ID is auto-generated."),
+      initialText: z.string().optional().describe("Optional initial text to populate into the session's live clipboard."),
+    },
+    async ({ customSessionId, initialText }) => {
+      try {
+        const result = await services.createSession(customSessionId, initialText);
+        return formatSuccess({
+          sessionId: result.sessionId,
+          url: result.url,
+          initialText: result.text,
+          message: `AxionSync session '${result.sessionId}' created and initialized successfully! Access it at ${result.url}`,
+        });
+      } catch (err) {
+        return formatError(err);
+      }
+    }
+  );
+
+  server.tool(
+    "create_new_session",
+    "Create and initialize a brand-new live AxionSync digital workspace session. (Alias for 'create_session').",
+    {
+      customSessionId: z.string().optional().describe("Optional custom room ID (e.g. 'TEAM-SYNC'). If omitted, an 8-character ID is auto-generated."),
+      initialText: z.string().optional().describe("Optional initial text to populate into the session's live clipboard."),
+    },
+    async ({ customSessionId, initialText }) => {
+      try {
+        const result = await services.createSession(customSessionId, initialText);
+        return formatSuccess({
+          sessionId: result.sessionId,
+          url: result.url,
+          initialText: result.text,
+          message: `AxionSync session '${result.sessionId}' created and initialized successfully! Access it at ${result.url}`,
+        });
+      } catch (err) {
+        return formatError(err);
+      }
+    }
+  );
+
   // 1. get_session
   server.tool(
     "get_session",

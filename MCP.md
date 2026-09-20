@@ -11,6 +11,7 @@ The server exposes **14 MCP Tools**, **4 MCP Resources**, and **3 MCP Prompts**:
 ### Tools
 | Tool Name | Description |
 | :--- | :--- |
+| `create_session` / `create_new_session` | Create and initialize a new digital workspace room with optional custom ID and initial text |
 | `get_session` | Retrieve live session metadata, clipboard content, files, and permissions |
 | `update_clipboard_text` | Synchronize text across all connected devices via real-time WebSockets |
 | `append_clipboard_text` | Append notes, logs, or snippets to the live clipboard |

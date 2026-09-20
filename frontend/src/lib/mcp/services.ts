@@ -137,6 +137,47 @@ function getAuthHeaders(token?: string) {
   return headers;
 }
 
+// 0. Create & Initialize New Session
+export interface CreateSessionResult {
+  sessionId: string;
+  url: string;
+  text?: string;
+  createdAt: number;
+}
+
+export async function createSession(
+  customSessionId?: string,
+  initialText?: string
+): Promise<CreateSessionResult> {
+  const sessionId = (
+    customSessionId
+      ? customSessionId.trim().toUpperCase()
+      : crypto.randomBytes(4).toString("hex").toUpperCase()
+  );
+
+  // Validate format (alphanumeric and hyphens only, max 32 chars)
+  if (!/^[A-Z0-9_-]{2,32}$/.test(sessionId)) {
+    throw new Error(
+      "Invalid sessionId format: Must be 2-32 alphanumeric characters, hyphens, or underscores."
+    );
+  }
+
+  // 1. Initialize session on backend
+  await axios.post(`${API_URL}/session/${encodeURIComponent(sessionId)}/init`);
+
+  // 2. If initialText is provided, set it
+  if (initialText) {
+    await updateSessionText(sessionId, initialText);
+  }
+
+  return {
+    sessionId,
+    url: `https://axionsync.vercel.app/${sessionId}`,
+    text: initialText || "",
+    createdAt: Date.now(),
+  };
+}
+
 // 1. Get Session Details
 export async function getSessionDetails(
   sessionId: string,

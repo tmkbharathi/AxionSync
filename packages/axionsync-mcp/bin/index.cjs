@@ -22845,7 +22845,7 @@ var require_form_data = __commonJS({
     var parseUrl2 = require("url").parse;
     var fs = require("fs");
     var Stream = require("stream").Stream;
-    var crypto2 = require("crypto");
+    var crypto3 = require("crypto");
     var mime = require_mime_types();
     var asynckit = require_asynckit();
     var setToStringTag = require_es_set_tostringtag();
@@ -23051,7 +23051,7 @@ var require_form_data = __commonJS({
       return Buffer.concat([dataBuffer, Buffer.from(this._lastBoundary())]);
     };
     FormData3.prototype._generateBoundary = function() {
-      this._boundary = "--------------------------" + crypto2.randomBytes(12).toString("hex");
+      this._boundary = "--------------------------" + crypto3.randomBytes(12).toString("hex");
     };
     FormData3.prototype.getLengthSync = function() {
       var knownLength = this._overheadLength + this._valueLength;
@@ -52726,6 +52726,7 @@ var {
 } = axios_default;
 
 // src/lib/mcp/services.ts
+var import_node_crypto = __toESM(require("node:crypto"));
 var API_URL = (process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL || "https://syncosync.onrender.com").replace(/\/$/, "");
 function formatServiceError(error51) {
   if (axios_default.isAxiosError(error51)) {
@@ -52794,6 +52795,24 @@ function getAuthHeaders(token) {
     headers["Authorization"] = `Bearer ${token.trim()}`;
   }
   return headers;
+}
+async function createSession(customSessionId, initialText) {
+  const sessionId = customSessionId ? customSessionId.trim().toUpperCase() : import_node_crypto.default.randomBytes(4).toString("hex").toUpperCase();
+  if (!/^[A-Z0-9_-]{2,32}$/.test(sessionId)) {
+    throw new Error(
+      "Invalid sessionId format: Must be 2-32 alphanumeric characters, hyphens, or underscores."
+    );
+  }
+  await axios_default.post(`${API_URL}/session/${encodeURIComponent(sessionId)}/init`);
+  if (initialText) {
+    await updateSessionText(sessionId, initialText);
+  }
+  return {
+    sessionId,
+    url: `https://axionsync.vercel.app/${sessionId}`,
+    text: initialText || "",
+    createdAt: Date.now()
+  };
 }
 async function getSessionDetails(sessionId, token) {
   const response = await axios_default.get(`${API_URL}/session/${encodeURIComponent(sessionId)}`, {
@@ -52998,6 +53017,48 @@ function createAxionSyncMcpServer() {
       ]
     };
   };
+  server.tool(
+    "create_session",
+    "Create and initialize a brand-new live AxionSync digital workspace session. Optionally provide a custom room ID and initial clipboard text.",
+    {
+      customSessionId: external_exports.string().optional().describe("Optional custom room ID (e.g. 'TEAM-SYNC'). If omitted, an 8-character ID is auto-generated."),
+      initialText: external_exports.string().optional().describe("Optional initial text to populate into the session's live clipboard.")
+    },
+    async ({ customSessionId, initialText }) => {
+      try {
+        const result = await createSession(customSessionId, initialText);
+        return formatSuccess({
+          sessionId: result.sessionId,
+          url: result.url,
+          initialText: result.text,
+          message: `AxionSync session '${result.sessionId}' created and initialized successfully! Access it at ${result.url}`
+        });
+      } catch (err) {
+        return formatError2(err);
+      }
+    }
+  );
+  server.tool(
+    "create_new_session",
+    "Create and initialize a brand-new live AxionSync digital workspace session. (Alias for 'create_session').",
+    {
+      customSessionId: external_exports.string().optional().describe("Optional custom room ID (e.g. 'TEAM-SYNC'). If omitted, an 8-character ID is auto-generated."),
+      initialText: external_exports.string().optional().describe("Optional initial text to populate into the session's live clipboard.")
+    },
+    async ({ customSessionId, initialText }) => {
+      try {
+        const result = await createSession(customSessionId, initialText);
+        return formatSuccess({
+          sessionId: result.sessionId,
+          url: result.url,
+          initialText: result.text,
+          message: `AxionSync session '${result.sessionId}' created and initialized successfully! Access it at ${result.url}`
+        });
+      } catch (err) {
+        return formatError2(err);
+      }
+    }
+  );
   server.tool(
     "get_session",
     "Retrieve the current state of an AxionSync session, including active status, clipboard text, file metadata, and permission details.",

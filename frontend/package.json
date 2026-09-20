@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "mcp": "tsx src/lib/mcp/cli.ts"
+    "mcp": "tsx src/lib/mcp/cli.ts",
+    "build:mcp": "node scripts/build-mcp.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

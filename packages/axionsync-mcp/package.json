@@ -1,0 +1,25 @@
+{
+  "name": "axionsync-mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) server for AxionSync digital workspace",
+  "bin": {
+    "axionsync-mcp": "./bin/index.cjs"
+  },
+  "files": [
+    "bin"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "axionsync",
+    "ai",
+    "claude",
+    "antigravity"
+  ],
+  "author": "tmkbharathi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tmkbharathi/AxionSync.git"
+  }
+}
